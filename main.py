@@ -1,0 +1,186 @@
+import sys
+try:
+    from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, QMessageBox
+    from PyQt5.QtCore import Qt
+    from ui_writing_test import WritingTestUI
+    try:
+        from ui_reading_test import ReadingTestUI
+    except ImportError as e:
+        print(f"Error importing ReadingTestUI: {e}")
+    try:
+        from ui_listening_test import ListeningTestUI
+    except ImportError as e:
+        print(f"Error importing ListeningTestUI: {e}")
+except ImportError as e:
+    print(f"Error importing PyQt5 modules: {e}")
+    sys.exit(1)
+
+class IELTSTestSimulator(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("IELTS Test Simulator")
+        self.setMinimumSize(1024, 768)
+        
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Create header with test section tabs
+        header = QWidget()
+        header.setStyleSheet("background-color: #f0f0f0; border-bottom: 1px solid #d0d0d0;")
+        header.setFixedHeight(50)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 0, 10, 0)
+        
+        # Title label
+        title_label = QLabel("IELTS Test Simulator")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        
+        # Navigation buttons
+        self.listening_btn = QPushButton("Listening")
+        self.reading_btn = QPushButton("Reading")
+        self.writing_btn = QPushButton("Writing")
+        
+        # Style and configure the buttons
+        for btn in [self.listening_btn, self.reading_btn, self.writing_btn]:
+            btn.setCheckable(True)
+            btn.setMinimumWidth(120)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #e0e0e0;
+                    border: 1px solid #c0c0c0;
+                    border-radius: 2px;
+                    padding: 8px 16px;
+                    font-size: 14px;
+                }
+                QPushButton:checked {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: 1px solid #388E3C;
+                }
+                QPushButton:hover {
+                    background-color: #d8d8d8;
+                }
+            """)
+        
+        self.listening_btn.clicked.connect(lambda: self.switch_section(0))
+        self.reading_btn.clicked.connect(lambda: self.switch_section(1))
+        self.writing_btn.clicked.connect(lambda: self.switch_section(2))
+        
+        # Help button
+        help_btn = QPushButton("Help")
+        help_btn.clicked.connect(self.show_help)
+        help_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e6e6e6;
+                border: 1px solid #c8c8c8;
+                padding: 6px 12px;
+                border-radius: 2px;
+            }
+            QPushButton:hover {
+                background-color: #d8d8d8;
+            }
+        """)
+        
+        # Add widgets to header layout
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(self.listening_btn)
+        header_layout.addWidget(self.reading_btn)
+        header_layout.addWidget(self.writing_btn)
+        header_layout.addStretch()
+        header_layout.addWidget(help_btn)
+        
+        # Add header to main layout
+        main_layout.addWidget(header)
+        
+        # Create stacked widget for different test sections
+        self.test_stack = QTabWidget()
+        self.test_stack.tabBar().setVisible(False)  # Hide tab bar as we're using our own buttons
+        
+        # Create test section UIs
+        try:
+            self.listening_ui = ListeningTestUI()
+            print("Successfully created ListeningTestUI")
+        except Exception as e:
+            print(f"Error creating ListeningTestUI: {e}")
+            self.listening_ui = QWidget()
+            
+        try:
+            self.reading_ui = ReadingTestUI()
+            print("Successfully created ReadingTestUI")
+        except Exception as e:
+            print(f"Error creating ReadingTestUI: {e}")
+            self.reading_ui = QWidget()
+            
+        try:
+            self.writing_ui = WritingTestUI()
+            print("Successfully created WritingTestUI")
+        except Exception as e:
+            print(f"Error creating WritingTestUI: {e}")
+            self.writing_ui = QWidget()
+        
+        # Add test sections to stacked widget
+        self.test_stack.addTab(self.listening_ui, "Listening")
+        self.test_stack.addTab(self.reading_ui, "Reading")
+        self.test_stack.addTab(self.writing_ui, "Writing")
+        
+        # Add stacked widget to main layout
+        main_layout.addWidget(self.test_stack)
+        
+        # Set initial section
+        self.switch_section(0)
+        
+    def switch_section(self, index):
+        """Switch between test sections"""
+        self.test_stack.setCurrentIndex(index)
+        
+        # Update button states
+        self.listening_btn.setChecked(index == 0)
+        self.reading_btn.setChecked(index == 1)
+        self.writing_btn.setChecked(index == 2)
+    
+    def show_help(self):
+        """Show help dialog"""
+        help_text = """
+IELTS Test Simulator Help
+
+This simulator includes all three computer-based IELTS test sections:
+
+1. Listening Test (30 minutes + 10 minutes transfer time)
+   - 4 sections with increasing difficulty
+   - 40 questions total
+
+2. Reading Test (60 minutes)
+   - 3 sections with 13-14 questions each
+   - 40 questions total
+   - Different content for Academic and General Training
+
+3. Writing Test (60 minutes)
+   - Task 1: 20 minutes (150 words minimum)
+   - Task 2: 40 minutes (250 words minimum)
+   - Different Task 1 for Academic and General Training
+
+Use the buttons at the top to switch between test sections.
+Each section has its own timer and instructions.
+
+Note: This simulator aims to replicate the experience of the
+official IELTS computer-based test as closely as possible.
+"""
+        QMessageBox.information(self, "Help", help_text)
+
+if __name__ == "__main__":
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')  # Clean, consistent style across platforms
+        window = IELTSTestSimulator()
+        window.showMaximized()  # Start maximized like test centers
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"Error starting application: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
