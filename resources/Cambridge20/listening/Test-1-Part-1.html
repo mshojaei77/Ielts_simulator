@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS Listening Test 1 - Section 1</title>
+    <link rel="stylesheet" href="../../ielts_cbt_style.css">
+    <style>
+        /* Full-width layout modifications */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+        }
+        
+        .test-container {
+            max-width: none;
+            width: 100%;
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        
+        /* Enhanced answer blank visibility */
+        .answer-blank {
+            min-width: 100px;
+            padding: 6px 12px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            font-size: 14px;
+            text-align: center;
+            margin: 0 4px;
+            transition: all 0.3s ease;
+        }
+        
+        .answer-blank:focus {
+            outline: none;
+            border-color: #0056b3;
+            background-color: #ffffff;
+            box-shadow: 0 0 8px rgba(0, 123, 255, 0.3);
+        }
+        
+        .answer-blank:not(:placeholder-shown) {
+            background-color: #e8f5e8;
+            border-color: #28a745;
+        }
+        
+        /* Full-width table */
+        .form-table {
+            width: 100%;
+            margin: 20px 0;
+        }
+        
+        .form-table td {
+            padding: 12px 15px;
+            line-height: 1.6;
+        }
+        
+        /* Remove navigation buttons from HTML since they're handled by PyQt */
+        .navigation-buttons {
+            display: none;
+        }
+        
+        /* Responsive text sizing */
+        .test-content {
+            padding: 20px 30px;
+            height: auto;
+            min-height: auto;
+        }
+        
+        .instructions {
+            margin-bottom: 25px;
+            padding: 20px;
+        }
+        
+        .question-group h3 {
+            margin-bottom: 15px;
+            color: #2c5aa0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1>IELTS Listening</h1>
+            <div class="test-info">
+                <span>Test 1 - Section 1</span>
+                <span>Questions 1-10</span>
+            </div>
+        </div>
+
+        <div class="section-header">
+            <h2>Section 1</h2>
+            <p>Questions 1-10</p>
+        </div>
+
+        <div class="instructions">
+            <div class="instructions-title">Instructions</div>
+            <p>You will hear a conversation between a customer and a travel agent about restaurant recommendations. First you have some time to look at questions 1-10.</p>
+            <p><strong>Now listen and answer questions 1-10.</strong></p>
+        </div>
+
+        <div class="test-content">
+            <div class="questions-section">
+                <div class="question-group">
+                    <h3>Questions 1-10</h3>
+                    <p>Complete the table below.</p>
+                    <p><strong>Write NO MORE THAN TWO WORDS AND/OR A NUMBER for each answer.</strong></p>
+
+                    <div class="form-section">
+                        <div class="form-title">Restaurant Recommendations</div>
+                        
+                        <table class="form-table">
+                            <thead>
+                                <tr>
+                                    <th>Name of restaurant</th>
+                                    <th>Location</th>
+                                    <th>Reason for recommendation</th>
+                                    <th>Other comments</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="label-cell">The Junction</td>
+                                    <td class="answer-cell">Greyson Street, near the station</td>
+                                    <td class="answer-cell">Good for people who are especially keen on</td>
+                                    <td class="answer-cell">Quite expensive</td>
+                                </tr>
+                                <tr>
+                                    <td class="answer-cell"></td>
+                                    <td class="answer-cell"></td>
+                                    <td class="answer-cell">
+                                        <input type="text" class="answer-blank" id="q1" placeholder="1"> 
+                                        The <input type="text" class="answer-blank" id="q2" placeholder="2"> is a good place for a drink
+                                    </td>
+                                    <td class="answer-cell"></td>
+                                </tr>
+                                <tr>
+                                    <td class="label-cell">Paloma</td>
+                                    <td class="answer-cell">In Bow Street next to the cinema</td>
+                                    <td class="answer-cell">
+                                        <input type="text" class="answer-blank" id="q3" placeholder="3"> food, good for sharing
+                                    </td>
+                                    <td class="answer-cell">Staff are very friendly<br><br>Need to pay £50 deposit<br><br>A limited selection of <input type="text" class="answer-blank" id="q4" placeholder="4"> food on the menu</td>
+                                </tr>
+                                <tr>
+                                    <td class="label-cell">The <input type="text" class="answer-blank" id="q5" placeholder="5"></td>
+                                    <td class="answer-cell">At the top of a <input type="text" class="answer-blank" id="q6" placeholder="6"></td>
+                                    <td class="answer-cell">A famous chef<br><br>All the <input type="text" class="answer-blank" id="q7" placeholder="7"> are very good</td>
+                                    <td class="answer-cell">Set lunch costs £ <input type="text" class="answer-blank" id="q8" placeholder="8"> per person<br><br>Only uses <input type="text" class="answer-blank" id="q9" placeholder="9"> ingredients<br><br>Portions probably of <input type="text" class="answer-blank" id="q10" placeholder="10"> size</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="navigation-buttons">
+            <button type="button" class="btn btn-secondary" onclick="previousSection()">Previous</button>
+            <button type="button" class="btn btn-primary" onclick="nextSection()">Next</button>
+        </div>
+    </div>
+
+    <script>
+        // Real-time answer tracking for PyQt integration
+        let answerCount = 0;
+        
+        function updateAnswerCount() {
+            const inputs = document.querySelectorAll('.answer-blank');
+            let completed = 0;
+            
+            inputs.forEach(input => {
+                if (input.value && input.value.trim() !== '') {
+                    completed++;
+                    input.style.backgroundColor = '#e8f5e8';
+                    input.style.borderColor = '#28a745';
+                } else {
+                    input.style.backgroundColor = '#f8f9fa';
+                    input.style.borderColor = '#007bff';
+                }
+            });
+            
+            answerCount = completed;
+            
+            // Trigger custom event for PyQt to listen to
+            window.dispatchEvent(new CustomEvent('answersUpdated', {
+                detail: { completed: completed, total: inputs.length }
+            }));
+            
+            return { completed: completed, total: inputs.length };
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const inputs = document.querySelectorAll('.answer-blank');
+            
+            inputs.forEach(input => {
+                // Auto-save answers
+                input.addEventListener('input', function() {
+                    localStorage.setItem(this.id, this.value);
+                    updateAnswerCount();
+                });
+                
+                // Load saved answers
+                const savedValue = localStorage.getItem(input.id);
+                if (savedValue) {
+                    input.value = savedValue;
+                }
+                
+                // Add focus/blur effects for better visibility
+                input.addEventListener('focus', function() {
+                    this.style.transform = 'scale(1.05)';
+                });
+                
+                input.addEventListener('blur', function() {
+                    this.style.transform = 'scale(1)';
+                });
+            });
+            
+            // Initial count update
+            updateAnswerCount();
+        });
+        
+        // Function for PyQt to call to get current completion status
+        function getCompletionStatus() {
+            return updateAnswerCount();
+        }
+        
+        // Enhanced visibility for blank spaces
+        function highlightBlanks() {
+            const inputs = document.querySelectorAll('.answer-blank');
+            inputs.forEach(input => {
+                if (!input.value || input.value.trim() === '') {
+                    input.style.animation = 'pulse 2s infinite';
+                }
+            });
+        }
+        
+        // CSS animation for highlighting empty blanks
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.7); }
+                70% { box-shadow: 0 0 0 10px rgba(0, 123, 255, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Periodically highlight empty blanks
+        setInterval(highlightBlanks, 10000); // Every 10 seconds
+    </script>
+</body>
+</html>

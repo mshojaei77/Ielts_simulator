@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>IELTS Speaking Test - Part 1 (Slides)</title>
+    <link rel="stylesheet" href="../../ielts_cbt_style.css" />
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; background-color: #ffffff; }
+        .header { background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 12px 20px; }
+        .title { font-size: 18px; font-weight: bold; color: #2c3e50; }
+        .subtitle { font-size: 13px; color: #666; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .slide-card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 20px; min-height: 260px; }
+        .slide { display: none; }
+        .slide.active { display: block; }
+        .slide h2 { margin-top: 0; font-size: 20px; color: #2c3e50; }
+        .question { font-size: 18px; margin: 12px 0 4px; color: #1d3557; }
+        .note { background-color: #fff3cd; border-left: 4px solid #f39c12; border-radius: 4px; padding: 10px 12px; margin: 12px 0; color: #6c757d; }
+        .topic { font-weight: bold; color: #2c3e50; margin-bottom: 6px; }
+        .footer-bar { background-color: #f8f9fa; border-top: 1px solid #dee2e6; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; bottom: 0; }
+        .nav-buttons button { background-color: #0066cc; color: #fff; border: 1px solid #0052a3; padding: 8px 16px; border-radius: 4px; font-weight: bold; margin-left: 8px; }
+        .nav-buttons button:disabled { background-color: #6c757d; border-color: #6c757d; color: #fff; }
+        .nav-buttons .back { background-color: #e0e0e0; color: #333; border-color: #c0c0c0; }
+        .status { font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">IELTS Speaking Test - Part 1</div>
+        <div class="subtitle">Introduction & Interview · One question per slide</div>
+    </div>
+
+    <div class="container">
+        <div class="slide-card">
+            <!-- Slides -->
+            <div class="slide active" data-index="0">
+                <h2>Instructions</h2>
+                <div class="note">
+                    This part lasts 4–5 minutes. You will answer short questions on familiar topics. Speak naturally and give full answers with reasons and examples.
+                </div>
+                <p>
+                    Topics today: Work or Studies, Hometown, Hobbies & Free Time.
+                </p>
+            </div>
+
+            <!-- Topic 1: Work or Studies -->
+            <div class="slide" data-index="1">
+                <div class="topic">Topic: Work or Studies</div>
+                <div class="question">Do you work or are you a student?</div>
+            </div>
+            <div class="slide" data-index="2">
+                <div class="topic">Topic: Work or Studies</div>
+                <div class="question">If working: What kind of work do you do?</div>
+            </div>
+            <div class="slide" data-index="3">
+                <div class="topic">Topic: Work or Studies</div>
+                <div class="question">If studying: What subject are you studying?</div>
+            </div>
+            <div class="slide" data-index="4">
+                <div class="topic">Topic: Work or Studies</div>
+                <div class="question">Do you enjoy your work or studies? Why?</div>
+            </div>
+            <div class="slide" data-index="5">
+                <div class="topic">Topic: Work or Studies</div>
+                <div class="question">What’s the most interesting part of your work or studies?</div>
+            </div>
+
+            <!-- Topic 2: Hometown -->
+            <div class="slide" data-index="6">
+                <div class="topic">Topic: Hometown</div>
+                <div class="question">Where are you from?</div>
+            </div>
+            <div class="slide" data-index="7">
+                <div class="topic">Topic: Hometown</div>
+                <div class="question">What’s your hometown like?</div>
+            </div>
+            <div class="slide" data-index="8">
+                <div class="topic">Topic: Hometown</div>
+                <div class="question">What do you like most about your hometown?</div>
+            </div>
+            <div class="slide" data-index="9">
+                <div class="topic">Topic: Hometown</div>
+                <div class="question">Has your hometown changed much since you were a child?</div>
+            </div>
+            <div class="slide" data-index="10">
+                <div class="topic">Topic: Hometown</div>
+                <div class="question">Would you like to live somewhere else in the future?</div>
+            </div>
+
+            <!-- Topic 3: Hobbies & Free Time -->
+            <div class="slide" data-index="11">
+                <div class="topic">Topic: Hobbies & Free Time</div>
+                <div class="question">What do you like to do in your free time?</div>
+            </div>
+            <div class="slide" data-index="12">
+                <div class="topic">Topic: Hobbies & Free Time</div>
+                <div class="question">Do you have any hobbies?</div>
+            </div>
+            <div class="slide" data-index="13">
+                <div class="topic">Topic: Hobbies & Free Time</div>
+                <div class="question">How long have you been interested in this hobby?</div>
+            </div>
+            <div class="slide" data-index="14">
+                <div class="topic">Topic: Hobbies & Free Time</div>
+                <div class="question">Do you think hobbies are important? Why?</div>
+            </div>
+            <div class="slide" data-index="15">
+                <div class="topic">Topic: Hobbies & Free Time</div>
+                <div class="question">Would you like to try any new hobbies in the future?</div>
+            </div>
+
+            <!-- End slide -->
+            <div class="slide" data-index="16">
+                <h2>End of Part 1</h2>
+                <p>That’s all for Part 1. Use the controls to proceed to Part 2 in the app.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer-bar">
+        <div class="status" id="status">Slide 1 of 17</div>
+        <div class="nav-buttons">
+            <button class="back" id="prevBtn" onclick="prevSlide()" disabled>◀ Previous</button>
+            <button id="nextBtn" onclick="nextSlide()">Next ▶</button>
+        </div>
+    </div>
+
+    <script>
+        let currentIndex = 0;
+        let slides = [];
+
+        function renderSlide(index) {
+            slides.forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+            currentIndex = index;
+            const total = slides.length;
+            // Update status text
+            const status = document.getElementById('status');
+            status.textContent = `Slide ${index + 1} of ${total}`;
+            // Update buttons
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            prevBtn.disabled = index === 0;
+            nextBtn.disabled = index === total - 1;
+            // Dispatch event for PyQt
+            window.dispatchEvent(new CustomEvent('slideChanged', { detail: { current: index + 1, total } }));
+        }
+
+        function nextSlide() {
+            if (currentIndex < slides.length - 1) {
+                renderSlide(currentIndex + 1);
+            }
+        }
+        function prevSlide() {
+            if (currentIndex > 0) {
+                renderSlide(currentIndex - 1);
+            }
+        }
+        function goToSlide(idx) {
+            if (idx >= 0 && idx < slides.length) {
+                renderSlide(idx);
+            }
+        }
+        function getSlideStatus() {
+            return { current: currentIndex + 1, total: slides.length };
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            slides = Array.from(document.querySelectorAll('.slide-card .slide'));
+            renderSlide(0);
+        });
+    </script>
+</body>
+</html>

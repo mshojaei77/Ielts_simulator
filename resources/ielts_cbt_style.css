@@ -1,0 +1,446 @@
+/* IELTS Computer-Based Test Interface Styling */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    color: #333;
+    background-color: #f5f5f5;
+    padding: 0;
+}
+
+.test-container {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    background-color: white;
+    border: none;
+    border-radius: 0;
+    overflow: hidden;
+}
+
+/* Header Section */
+.test-header {
+    background-color: #2c5aa0;
+    color: white;
+    padding: 15px 20px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.section-header {
+    background-color: #e8f4fd;
+    border-bottom: 1px solid #ccc;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #2c5aa0;
+}
+
+/* Content Area */
+.test-content {
+    display: flex;
+    height: calc(100vh - 120px);
+    min-height: 600px;
+}
+
+.passage-panel {
+    flex: 1;
+    padding: 20px;
+    border-right: 2px solid #e0e0e0;
+    overflow-y: auto;
+    background-color: #fafafa;
+}
+
+.questions-panel {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background-color: white;
+}
+
+.passage-content, .task-content {
+    line-height: 1.6;
+}
+
+/* Instructions */
+.instructions {
+    background-color: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+    font-size: 13px;
+}
+
+.instructions-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #2c5aa0;
+}
+
+/* Questions Section */
+.questions-section {
+    margin-top: 30px;
+}
+
+.question-group {
+    margin-bottom: 25px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.question-header {
+    background-color: #f5f5f5;
+    padding: 10px 15px;
+    font-weight: bold;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 13px;
+}
+
+.question-content {
+    padding: 15px;
+}
+
+.question {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: flex-start;
+}
+
+.question-number {
+    min-width: 30px;
+    font-weight: bold;
+    margin-right: 10px;
+    color: #2c5aa0;
+}
+
+.question-text {
+    flex: 1;
+}
+
+/* Input Fields */
+.answer-input {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-width: 80px;
+    background-color: #fff;
+    margin: 0 3px;
+}
+
+.answer-input:focus {
+    outline: none;
+    border-color: #2c5aa0;
+    box-shadow: 0 0 3px rgba(44, 90, 160, 0.3);
+}
+
+/* Multiple Choice Options */
+.options {
+    margin-top: 8px;
+}
+
+.option {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+}
+
+.option-letter {
+    font-weight: bold;
+    margin-right: 8px;
+    min-width: 20px;
+    color: #2c5aa0;
+}
+
+.option-text {
+    flex: 1;
+}
+
+/* Tables */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.data-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+    color: #333;
+}
+
+.data-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+/* Form Tables (like in listening tests) */
+.form-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    background-color: white;
+}
+
+.form-table td {
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    vertical-align: middle;
+}
+
+.form-table .label-cell {
+    background-color: #f8f8f8;
+    font-weight: normal;
+    width: 200px;
+}
+
+.form-table .input-cell {
+    background-color: white;
+}
+
+/* Blank Spaces in Text */
+.blank {
+    display: inline-block;
+    border-bottom: 1px solid #333;
+    min-width: 60px;
+    height: 20px;
+    margin: 0 2px;
+    vertical-align: bottom;
+}
+
+/* Numbered Blanks */
+.numbered-blank {
+    display: inline-block;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin: 0 2px;
+    background-color: #f9f9f9;
+    font-weight: bold;
+    color: #2c5aa0;
+    min-width: 25px;
+    text-align: center;
+}
+
+/* Speaking Test Specific */
+.speaking-part {
+    margin-bottom: 30px;
+}
+
+.topic-section {
+    margin-bottom: 20px;
+    border-left: 3px solid #2c5aa0;
+    padding-left: 15px;
+}
+
+.topic-title {
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #2c5aa0;
+}
+
+.speaking-questions {
+    list-style: none;
+    padding: 0;
+}
+
+.speaking-questions li {
+    margin-bottom: 8px;
+    padding-left: 15px;
+    position: relative;
+}
+
+.speaking-questions li:before {
+    content: "•";
+    color: #2c5aa0;
+    position: absolute;
+    left: 0;
+}
+
+/* Writing Task Specific */
+.task-requirements {
+    background-color: #fff9e6;
+    border: 1px solid #f0c674;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.task-requirements h4 {
+    color: #8b6914;
+    margin-bottom: 10px;
+}
+
+.word-count {
+    font-weight: bold;
+    color: #d73502;
+}
+
+/* Time Information */
+.time-info {
+    background-color: #e8f4fd;
+    border: 1px solid #b3d9f7;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 10px 0;
+    font-size: 12px;
+    color: #2c5aa0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    .test-content {
+        padding: 15px;
+    }
+    
+    .question {
+        flex-direction: column;
+    }
+    
+    .question-number {
+        margin-bottom: 5px;
+    }
+}
+
+/* Listening Test Specific Styles */
+.audio-controls {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.audio-controls button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    margin: 0 5px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.audio-controls button:hover {
+    background-color: #0056b3;
+}
+
+/* Form Table Styles for Listening Tests */
+.form-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background-color: white;
+}
+
+.form-table td {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    vertical-align: middle;
+}
+
+.form-table .label-cell {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    width: 40%;
+    text-align: left;
+}
+
+.form-table .answer-cell {
+    width: 60%;
+    background-color: white;
+}
+
+.form-section {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 4px;
+    margin: 20px 0;
+}
+
+.form-title {
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 16px;
+    color: #333;
+}
+
+/* Answer Input Fields */
+.answer-blank {
+    display: inline-block;
+    min-width: 80px;
+    padding: 4px 8px;
+    border: none;
+    border-bottom: 2px solid #333;
+    background-color: transparent;
+    font-size: 14px;
+    text-align: center;
+}
+
+.answer-blank:focus {
+    outline: none;
+    border-bottom-color: #007bff;
+    background-color: #f0f8ff;
+}
+
+/* Multiple Choice Styles */
+.multiple-choice-group {
+    margin: 15px 0;
+}
+
+.choice-option {
+    margin: 8px 0;
+    padding: 5px 0;
+}
+
+.choice-option input[type="radio"] {
+    margin-right: 10px;
+}
+
+.choice-option label {
+    cursor: pointer;
+    font-size: 14px;
+}
+
+/* Question Numbering */
+.question-number {
+    font-weight: bold;
+    color: #007bff;
+    margin-right: 10px;
+    min-width: 30px;
+    display: inline-block;
+}
+
+/* Print Styles */
+@media print {
+    body {
+        background-color: white;
+        padding: 0;
+    }
+    
+    .test-container {
+        border: none;
+        box-shadow: none;
+    }
+}
