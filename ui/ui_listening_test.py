@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -347,26 +348,26 @@ class ListeningTestUI(QWidget):
         overlay = QWidget()
         overlay.setStyleSheet("""
             QWidget {
-                background-color: #f8f9fa;
+                background-color: #fafafa;
             }
         """)
         
         layout = QVBoxLayout(overlay)
-        layout.setContentsMargins(50, 50, 50, 50)
-        layout.setSpacing(30)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(24)
         
         # Add vertical stretch to center content
         layout.addStretch()
         
         # Main guidance card
         guidance_card = QFrame()
-        guidance_card.setFrameStyle(QFrame.Box)
+        guidance_card.setFrameStyle(QFrame.NoFrame)
         guidance_card.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border: 2px solid #007bff;
-                border-radius: 10px;
-                padding: 30px;
+                background-color: #ffffff;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 24px;
             }
         """)
         guidance_card.setMaximumWidth(800)
@@ -379,11 +380,11 @@ class ListeningTestUI(QWidget):
         title = QLabel("IELTS Listening Test Instructions")
         title.setStyleSheet("""
             QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #007bff;
+                font-size: 20px;
+                font-weight: 600;
+                color: #111827;
                 text-align: center;
-                margin-bottom: 10px;
+                margin-bottom: 6px;
             }
         """)
         title.setAlignment(Qt.AlignCenter)
@@ -410,10 +411,11 @@ class ListeningTestUI(QWidget):
         instructions.setWordWrap(True)
         instructions.setStyleSheet("""
             QLabel {
-                background-color: #f8f9fa;
-                padding: 20px;
-                border-radius: 5px;
-                border: 1px solid #dee2e6;
+                background-color: transparent;
+                padding: 4px 0;
+                border-radius: 0;
+                border: none;
+                color: #4b5563;
             }
         """)
         card_layout.addWidget(instructions)
@@ -422,38 +424,39 @@ class ListeningTestUI(QWidget):
         audio_test_frame = QFrame()
         audio_test_frame.setStyleSheet("""
             QFrame {
-                background-color: #e3f2fd;
-                border: 1px solid #2196f3;
-                border-radius: 5px;
-                padding: 15px;
+                background-color: #f9fafb;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                padding: 12px;
             }
         """)
         audio_layout = QHBoxLayout(audio_test_frame)
         
         audio_label = QLabel("Audio Test:")
-        audio_label.setStyleSheet("font-weight: bold; color: #1976d2;")
+        audio_label.setStyleSheet("font-weight: bold; color: #374151;")
         
         self.audio_test_button = QPushButton("🔊 Test Audio")
         self.audio_test_button.setStyleSheet("""
             QPushButton {
-                background-color: #2196f3;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #ced4da;
+                padding: 8px 14px;
+                border-radius: 6px;
+                font-weight: 500;
             }
             QPushButton:hover {
-                background-color: #1976d2;
+                background-color: #f8f9fa;
+                border-color: #adb5bd;
             }
             QPushButton:pressed {
-                background-color: #0d47a1;
+                background-color: #e9ecef;
             }
         """)
         self.audio_test_button.clicked.connect(self.play_audio_test)
         
         self.audio_status_label = QLabel("Click to test your audio")
-        self.audio_status_label.setStyleSheet("color: #666; font-style: italic;")
+        self.audio_status_label.setStyleSheet("color: #6b7280; font-style: italic;")
         
         audio_layout.addWidget(audio_label)
         audio_layout.addWidget(self.audio_test_button)
@@ -466,20 +469,20 @@ class ListeningTestUI(QWidget):
         self.start_actual_test_button = QPushButton("Start Test")
         self.start_actual_test_button.setStyleSheet("""
             QPushButton {
-                background-color: #28a745;
+                background-color: #22c55e;
                 color: white;
                 border: none;
-                padding: 15px 40px;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-                min-height: 50px;
+                padding: 12px 28px;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: 600;
+                min-height: 44px;
             }
             QPushButton:hover {
-                background-color: #218838;
+                background-color: #16a34a;
             }
             QPushButton:pressed {
-                background-color: #1e7e34;
+                background-color: #15803d;
             }
         """)
         self.start_actual_test_button.clicked.connect(self.start_actual_test)
@@ -864,11 +867,125 @@ class ListeningTestUI(QWidget):
                 # Fallback if JavaScript execution fails
                 self.completion_label.setText(f"Completed: 0/10 questions (Section {self.current_section + 1})")
 
+    def collect_all_answers(self):
+        """Collect all answers from all sections using JavaScript"""
+        all_answers = {}
+        
+        # JavaScript code to collect all answers from the current page
+        js_code = """
+        (function() {
+            var inputs = document.querySelectorAll('.answer-blank');
+            var answers = {};
+            
+            inputs.forEach(function(input, index) {
+                var questionNumber = input.getAttribute('data-question') || (index + 1);
+                var value = input.value ? input.value.trim() : '';
+                answers[questionNumber] = value;
+            });
+            
+            return answers;
+        })();
+        """
+        
+        def collect_section_answers(section_index):
+            """Collect answers for a specific section"""
+            # Switch to the section
+            self.switch_section(section_index)
+            
+            # Wait a moment for the page to load
+            QTimer.singleShot(500, lambda: self.web_view.page().runJavaScript(js_code, 
+                lambda result: self.store_section_answers(section_index, result)))
+        
+        # Collect answers from all sections
+        for i in range(4):
+            collect_section_answers(i)
+        
+        return all_answers
+    
+    def store_section_answers(self, section_index, answers):
+        """Store answers for a specific section"""
+        if not hasattr(self, 'collected_answers'):
+            self.collected_answers = {}
+        
+        self.collected_answers[f"Section {section_index + 1}"] = answers
+        
+        # If we have collected all sections, save the answers
+        if len(self.collected_answers) == 4:
+            self.save_answers_to_file()
+    
+    def save_answers_to_file(self):
+        """Save all collected answers to a text file in Desktop/IELTS_Practice"""
+        try:
+            # Get Desktop path
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            ielts_practice_path = os.path.join(desktop_path, "IELTS_Practice")
+            
+            # Create directory if it doesn't exist
+            if not os.path.exists(ielts_practice_path):
+                os.makedirs(ielts_practice_path)
+            
+            # Generate filename with timestamp
+            current_time = datetime.now()
+            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+            current_test = self.test_combo.currentText() or "Unknown_Test"
+            current_book = self.book_combo.currentText() or "Unknown_Book"
+            
+            filename = f"Listening_Answers_{current_book.replace(' ', '_')}_{current_test.replace(' ', '_')}_{timestamp}.txt"
+            file_path = os.path.join(ielts_practice_path, filename)
+            
+            # Prepare content
+            content = []
+            content.append("=" * 60)
+            content.append("IELTS LISTENING TEST ANSWERS")
+            content.append("=" * 60)
+            content.append(f"Test: {current_book} - {current_test}")
+            content.append(f"Date: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            content.append(f"Duration: {35 - (self.time_remaining // 60)} minutes")
+            content.append("=" * 60)
+            content.append("")
+            
+            # Add answers for each section
+            for section_name in ["Section 1", "Section 2", "Section 3", "Section 4"]:
+                content.append(f"{section_name}:")
+                content.append("-" * 20)
+                
+                if section_name in getattr(self, 'collected_answers', {}):
+                    answers = self.collected_answers[section_name]
+                    if answers:
+                        for question, answer in answers.items():
+                            content.append(f"Question {question}: {answer if answer else '[No Answer]'}")
+                    else:
+                        content.append("No answers recorded for this section")
+                else:
+                    content.append("Section not completed")
+                
+                content.append("")
+            
+            content.append("=" * 60)
+            content.append("End of Answers")
+            content.append("=" * 60)
+            
+            # Write to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(content))
+            
+            # Show success message
+            QMessageBox.information(self, "Answers Saved", 
+                                  f"Your answers have been saved successfully!\n\n"
+                                  f"File location: {file_path}")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Save Error", 
+                              f"Failed to save answers: {str(e)}")
+    
     def show_test_summary(self):
-        """Show test completion summary"""
+        """Show test completion summary and save answers"""
+        # Collect and save answers
+        self.collect_all_answers()
+        
         QMessageBox.information(self, "Test Complete", 
                               "Your listening test has been completed.\n\n"
-                              "Results will be processed and made available shortly.")
+                              "Your answers are being saved to Desktop/IELTS_Practice folder.")
 
 
 

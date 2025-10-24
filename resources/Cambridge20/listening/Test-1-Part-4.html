@@ -1,96 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IELTS Listening Test 1 - Section 4</title>
-    <link rel="stylesheet" href="../../ielts_cbt_style.css">
+<meta charset="UTF-8">
+<title>IELTS Listening Test 1 - Section 4</title>
 </head>
 <body>
-    <div class="test-container">
-        <div class="test-header">
-            <h1>IELTS Listening</h1>
-            <div class="test-info">
-                <span>Test 1 - Section 4</span>
-                <span>Questions 31-40</span>
-            </div>
-        </div>
+<h1>IELTS Listening Test 1 - Section 4</h1>
 
-        <div class="section-header">
-            <h2>Section 4</h2>
-            <p>Questions 31-40</p>
-        </div>
+<h2>Questions 31-40</h2>
+<p><strong>Complete the notes below.</strong></p>
+<p><strong>Write ONE WORD ONLY for each answer.</strong></p>
 
-        <div class="instructions">
-            <div class="instructions-title">Instructions</div>
-            <p>You will hear a lecture about urban planning and sustainable cities. First you have some time to look at questions 31-40.</p>
-            <p><strong>Now listen and answer questions 31-40.</strong></p>
-        </div>
+<h3>Historical background</h3>
+<p>Nearly all major cities were built on a river.</p>
+<p>Rivers were traditionally used by city dwellers for transport, fishing and recreation.</p>
+<p>Industrial development and rising populations later led to:</p>
+<ul>
+<li>- more sewage from houses being discharged into the river</li>
+<li>- pollution from <strong>31</strong> <input id="q31" style="width: 100px;"> on the river bank.</li>
+</ul>
+<p>In 1957, the River Thames in London was declared biologically <strong>32</strong> <input id="q32" style="width: 100px;">.</p>
 
-        <div class="test-content">
-            <div class="questions-section">
-                <div class="question-group">
-                    <h3>Questions 31-40</h3>
-                    <p>Complete the notes below.</p>
-                    <p><strong>Write NO MORE THAN THREE WORDS AND/OR A NUMBER for each answer.</strong></p>
+<h3>Recent improvements</h3>
+<p>Seals and even a <strong>33</strong> <input id="q33" style="width: 100px;"> have been seen in the River Thames.</p>
+<p>Riverside warehouses are converted to restaurants and <strong>34</strong> <input id="q34" style="width: 100px;">.</p>
+<p>In Los Angeles, there are plans to:</p>
+<ul>
+<li>- build a riverside <strong>35</strong> <input id="q35" style="width: 100px;"></li>
+<li>- display <strong>36</strong> <input id="q36" style="width: 100px;"> projects.</li>
+</ul>
+<p>In Paris, <strong>37</strong> <input id="q37" style="width: 100px;"> are created on the sides of the river every summer.</p>
 
-                    <div class="form-section">
-                        <div class="form-title">Urban Planning and Sustainable Cities</div>
-                        
-                        <div style="padding: 20px; background-color: white; border-radius: 4px;">
-                            <h4>Introduction</h4>
-                            <p>• By 2050, approximately <input type="text" class="answer-blank" id="q31" placeholder="31"> of the world's population will live in cities</p>
-                            <p>• Urban areas currently consume <input type="text" class="answer-blank" id="q32" placeholder="32"> of global energy</p>
-                            
-                            <h4>Key Principles of Sustainable Urban Planning</h4>
-                            
-                            <p><strong>1. Compact Development</strong></p>
-                            <p>• Reduces the need for <input type="text" class="answer-blank" id="q33" placeholder="33"> transportation</p>
-                            <p>• Preserves <input type="text" class="answer-blank" id="q34" placeholder="34"> areas outside the city</p>
-                            
-                            <p><strong>2. Mixed-Use Development</strong></p>
-                            <p>• Combines residential, commercial, and <input type="text" class="answer-blank" id="q35" placeholder="35"> spaces</p>
-                            <p>• Reduces commuting time and <input type="text" class="answer-blank" id="q36" placeholder="36"> emissions</p>
-                            
-                            <p><strong>3. Green Infrastructure</strong></p>
-                            <p>• Includes parks, <input type="text" class="answer-blank" id="q37" placeholder="37">, and green roofs</p>
-                            <p>• Helps manage <input type="text" class="answer-blank" id="q38" placeholder="38"> and improve air quality</p>
-                            
-                            <h4>Case Study: Copenhagen</h4>
-                            <p>• Aims to become <input type="text" class="answer-blank" id="q39" placeholder="39"> neutral by 2025</p>
-                            <p>• Has invested heavily in <input type="text" class="answer-blank" id="q40" placeholder="40"> infrastructure</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="navigation-buttons">
-            <button type="button" class="btn btn-secondary" onclick="previousSection()">Previous</button>
-            <button type="button" class="btn btn-primary" onclick="finishTest()">Finish Test</button>
-        </div>
-    </div>
-
-    <script>
-        function finishTest() {
-            console.log('Finishing listening test');
-        }
-
-        function previousSection() {
-            console.log('Moving to previous section');
-        }
-
-        // Auto-save answers for text inputs
-        document.querySelectorAll('.answer-blank').forEach(input => {
-            input.addEventListener('input', function() {
-                localStorage.setItem(this.id, this.value);
-            });
-            
-            const savedValue = localStorage.getItem(input.id);
-            if (savedValue) {
-                input.value = savedValue;
-            }
-        });
-    </script>
+<h3>Transport possibilities</h3>
+<p>Over 5 billion passengers already travel by <strong>38</strong> <input id="q38" style="width: 100px;"> in cities round the world.</p>
+<p>Changes in shopping habits mean the number of deliveries that are made is increasing.</p>
+<p>Instead of road transport, goods could be transported by large freight barges and electric <strong>39</strong> <input id="q39" style="width: 100px;"> or in future, by <strong>40</strong> <input id="q40" style="width: 100px;">.</p>
 </body>
 </html>

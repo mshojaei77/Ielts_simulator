@@ -542,8 +542,28 @@ class WritingTestUI(QWidget):
         """Update the web view with current task content"""
         if self.test_combo.currentText():
             task_num = self.current_task + 1
-            content = self.load_task_content(self.test_combo.currentText(), task_num)
-            if content:
+            test_name = self.test_combo.currentText()
+            
+            # Extract test number from test name (e.g., "Test 1" -> "1")
+            test_num = test_name.split()[-1] if test_name else "1"
+            cambridge_book = self.book_combo.currentText()
+            
+            # Map Cambridge book names to directory names
+            book_mapping = {
+                "Cambridge 20": "Cambridge20",
+                "Cambridge 19": "Cambridge19"
+            }
+            
+            book_dir = book_mapping.get(cambridge_book, "Cambridge20")
+            filename = f"resources/{book_dir}/writing/Test-{test_num}-Task-{task_num}.html"
+            
+            # Check if file exists and load it directly
+            if os.path.exists(filename):
+                file_url = QUrl.fromLocalFile(os.path.abspath(filename))
+                self.web_view.load(file_url)
+            else:
+                # Fallback to setHtml with default content
+                content = self.get_default_content(task_num)
                 self.web_view.setHtml(content)
 
     def update_word_count(self):
