@@ -12,66 +12,37 @@
     </div>
 
     <div class="container">
-        <div class="slide-card">
+        <div class="content-card">
             <!-- Intro -->
-            <div class="slide active" data-index="0">
+            <div class="section">
                 <h2>Discussion Overview</h2>
                 <div class="note">In this part, we discuss broader ideas related to your Part 2 topic. Try to explain, compare, and evaluate. Support your views with reasons.</div>
             </div>
 
             <!-- Theme: Theatre and Acting (linked to Part 2) -->
-            <div class="slide" data-index="1">
+            <div class="section">
                 <div class="question">What are the most popular kinds of plays or shows at theatres in your country?</div>
             </div>
-            <div class="slide" data-index="2">
+            <div class="section">
                 <div class="question">How easy is it to get tickets to the theatre?</div>
             </div>
-            <div class="slide" data-index="3">
+            <div class="section">
                 <div class="question">Do you think theatres need to do more to attract younger audiences?</div>
             </div>
-            <div class="slide" data-index="4">
+            <div class="section">
                 <div class="question">What do you think attracts people to working as an actor?</div>
             </div>
-            <div class="slide" data-index="5">
+            <div class="section">
                 <div class="question">What are some of the qualities that a person needs to have if they want to become an actor?</div>
             </div>
-            <div class="slide" data-index="6">
+            <div class="section">
                 <div class="question">Can you think of any disadvantages of working as an actor?</div>
             </div>
-
-            <!-- End -->
-            <div class="slide" data-index="7">
-                <h2>End of Part 3</h2>
-                <p>Thank you. This concludes the Speaking test. You can review your session in the app.</p>
-            </div>
         </div>
     </div>
 
-    <div class="footer-bar">
-        <div class="status" id="status">Slide 1 of 8</div>
-        <div class="nav-buttons">
-            <button class="back" id="prevBtn" onclick="prevSlide()" disabled>◀ Previous</button>
-            <button id="nextBtn" onclick="nextSlide()">Next ▶</button>
-        </div>
-    </div>
 
-    <script>
-        let currentIndex = 0;
-        let slides = [];
-        function renderSlide(index) {
-            slides.forEach((el, i) => el.classList.toggle('active', i === index));
-            currentIndex = index;
-            const total = slides.length;
-            document.getElementById('status').textContent = `Slide ${index + 1} of ${total}`;
-            document.getElementById('prevBtn').disabled = index === 0;
-            document.getElementById('nextBtn').disabled = index === total - 1;
-            window.dispatchEvent(new CustomEvent('slideChanged', { detail: { current: index + 1, total } }));
-        }
-        function nextSlide(){ if(currentIndex < slides.length - 1) renderSlide(currentIndex + 1); }
-        function prevSlide(){ if(currentIndex > 0) renderSlide(currentIndex - 1); }
-        function goToSlide(idx){ if(idx >=0 && idx < slides.length) renderSlide(idx); }
-        function getSlideStatus(){ return { current: currentIndex + 1, total: slides.length }; }
-        document.addEventListener('DOMContentLoaded', function(){ slides = Array.from(document.querySelectorAll('.slide-card .slide')); renderSlide(0); });
-    </script>
+
+
 </body>
 </html>

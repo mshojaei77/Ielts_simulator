@@ -1,694 +1,560 @@
 import os
-import wave
-import subprocess
-import shutil
-from datetime import datetime
+import struct
+import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, 
-    QFrame, QGroupBox, QTextEdit, QProgressBar, QMessageBox
+    QFrame, QComboBox, QSpacerItem, QMessageBox
 )
-from PyQt5.QtCore import Qt, QUrl, QTimer
+from PyQt5.QtCore import QUrl, Qt, QTimer, QFile
+from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtMultimedia import QAudioInput, QAudioFormat, QAudioDeviceInfo
-from PyQt5.QtGui import QFont
+
+# Try to import QtMultimedia components for recording
+try:
+    from PyQt5.QtMultimedia import QAudioInput, QAudioFormat, QAudioDeviceInfo
+except ImportError:
+    QAudioInput = None
+    QAudioFormat = None
+    QAudioDeviceInfo = None
+
+
+class WavFileWriter:
+    """Simple WAV writer using QFile. Writes a placeholder header and fixes sizes on finalize."""
+    def __init__(self, path: str, sample_rate: int, channels: int, sample_size_bits: int):
+        self.path = path
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.sample_size_bits = sample_size_bits
+        self.byte_rate = sample_rate * channels * (sample_size_bits // 8)
+        self.block_align = channels * (sample_size_bits // 8)
+        self.file = QFile(path)
+
+    def open(self) -> bool:
+        if not self.file.open(QFile.WriteOnly):
+            return False
+        header = struct.pack(
+            '<4sI4s4sIHHIIHH4sI',
+            b'RIFF',
+            36,               # placeholder for chunk size
+            b'WAVE',
+            b'fmt ',
+            16,               # PCM fmt chunk size
+            1,                # Audio format (PCM)
+            self.channels,
+            self.sample_rate,
+            self.byte_rate,
+            self.block_align,
+            self.sample_size_bits,
+            b'data',
+            0                 # placeholder for data size
+        )
+        self.file.write(header)
+        return True
+
+    def finalize(self):
+        try:
+            total_size = self.file.size()
+            data_size = max(0, total_size - 44)
+            # Update RIFF chunk size at offset 4: 36 + data_size
+            self.file.seek(4)
+            self.file.write(struct.pack('<I', 36 + data_size))
+            # Update data chunk size at offset 40: data_size
+            self.file.seek(40)
+            self.file.write(struct.pack('<I', data_size))
+            self.file.flush()
+        finally:
+            self.file.close()
+
 
 class SpeakingTestUI(QWidget):
     """
-    Real IELTS Speaking Test Simulator with maximum exam simulation
-    - Enforced timing for each part
-    - No back/skip/re-record capabilities (real exam conditions)
-    - Prominent recording interface with guidance
-    - Auto-start/stop timing enforcement
+    Enhanced IELTS Speaking Test Interface with navigation and recording
+    - Navigation between parts with Previous/Next buttons
+    - Test selection dropdown
+    - Clean content display
+    - Enhanced top bar layout
+    - Voice recording (Start/Stop) with improved digital timer
     """
 
     def __init__(self):
         super().__init__()
         self.current_part = 0  # 0=Part1, 1=Part2, 2=Part3
+        self.current_test = 1  # Default to Test 1
+        self.total_parts = 3
+        self.audio_supported = QAudioInput is not None and QAudioFormat is not None
+
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         self.speaking_dir = os.path.join(self.base_dir, 'resources', 'Cambridge20', 'speaking')
-        self.part_files = [
-            os.path.join(self.speaking_dir, 'Test-1-Part-1.html'),
-            os.path.join(self.speaking_dir, 'Test-1-Part-2.html'),
-            os.path.join(self.speaking_dir, 'Test-1-Part-3.html'),
-        ]
-        
-        # Real exam timing (in seconds)
-        self.part_durations = [300, 240, 300]  # Part 1: 5min, Part 2: 4min, Part 3: 5min
-        self.current_time_left = 0
-        self.part_started = [False, False, False]  # Track which parts have been started
-        self.part_skipped = [False, False, False]  # Track which parts have been skipped
-        self.exam_timer = QTimer(self)
-        self.exam_timer.timeout.connect(self.update_countdown)
-        
-        # Recording state
-        self.is_recording = False
-        self.audio_input = None
-        self.audio_io = None
-        self.wave_fp = None
-        self.audio_timer = None
-        self.temp_wav_path = None
-        self.final_mp3_path = None
-        
-        self.storage_dir = self.get_storage_dir()
+        self.recordings_dir = os.path.join(self.base_dir, 'recordings', 'speaking')
+        os.makedirs(self.recordings_dir, exist_ok=True)
 
+        # Recording state
+        self.audio_input = None
+        self.wave_writer = None
+        self.record_timer = QTimer(self)
+        self.record_timer.setInterval(1000)
+        self.record_timer.timeout.connect(self.update_recording_timer)
+        self.record_seconds = 0
+        self.dot_visible = False  # blinking indicator
+
+        # Load available tests
+        self.available_tests = self.load_available_tests()
+        
         self.apply_style()
         self.init_ui()
-        self.load_part(self.current_part)
+        self.load_current_content()
+        self.update_navigation_buttons()
+        self.update_recording_ui_state()
+
+    def load_available_tests(self):
+        """Load available speaking tests from the directory"""
+        tests = []
+        try:
+            if os.path.exists(self.speaking_dir):
+                files = os.listdir(self.speaking_dir)
+                test_numbers = set()
+                for filename in files:
+                    if filename.startswith('Test-') and filename.endswith('.html'):
+                        parts = filename.split('-')
+                        if len(parts) >= 2:
+                            try:
+                                test_num = int(parts[1])
+                                test_numbers.add(test_num)
+                            except ValueError:
+                                continue
+                tests = sorted(list(test_numbers))
+        except Exception as e:
+            print(f"Error loading available tests: {e}")
+        
+        # If no tests found, default to Test 1
+        return tests if tests else [1]
+
+    def get_part_file_path(self, test_num, part_num):
+        """Get the file path for a specific test and part"""
+        filename = f"Test-{test_num}-Part-{part_num + 1}.html"
+        return os.path.join(self.speaking_dir, filename)
 
     def apply_style(self):
+        """Apply clean, minimalist styling similar to writing test"""
         self.setStyleSheet("""
             QWidget { 
-                background-color: #ffffff; 
+                background-color: #f8f8f8; 
                 font-family: Arial, sans-serif; 
                 font-size: 12px; 
                 color: #333; 
             }
+            
+            /* Top bar styling */
             #top_bar { 
-                background-color: #f8f9fa; 
-                border-bottom: 1px solid #dee2e6; 
-                padding: 6px 12px; 
+                background-color: #f0f0f0; 
+                border-bottom: 1px solid #d0d0d0; 
+                padding: 5px 15px; 
             }
-            #recording_section { 
-                background-color: #f0f8ff; 
-                border: 2px solid #0066cc; 
-                border-radius: 8px; 
-                padding: 15px; 
-                margin: 8px; 
-            }
-            #countdown_display {
-                background-color: #ff4444;
-                color: white;
-                font-size: 20px;
-                font-weight: bold;
-                padding: 8px 12px;
-                border-radius: 5px;
-                text-align: center;
-                min-width: 80px;
-            }
+
+            /* Button styling */
             QPushButton { 
-                background-color: #e0e0e0; 
-                border: 1px solid #c0c0c0; 
+                background-color: #e6e6e6; 
+                border: 1px solid #c8c8c8; 
                 border-radius: 3px; 
                 padding: 6px 12px; 
                 font-size: 12px; 
+                min-height: 24px;
                 margin: 2px;
             }
-            QPushButton:hover { background-color: #d8d8d8; }
-            QPushButton:disabled { color: #999; background-color: #f5f5f5; }
-            QPushButton.primary { 
-                background-color: #0066cc; 
-                color: #fff; 
-                border: 1px solid #0052a3; 
-                font-weight: bold; 
+            QPushButton:hover { 
+                background-color: #d8d8d8; 
             }
-            QPushButton.primary:hover { background-color: #0052a3; }
-            QPushButton.record { 
-                background-color: #dc3545; 
+            QPushButton:pressed { 
+                background-color: #c0c0c0; 
+            }
+            QPushButton:checked { 
+                background-color: #4CAF50; 
                 color: white; 
-                font-size: 14px; 
-                font-weight: bold; 
-                padding: 10px 20px; 
-                border-radius: 6px; 
-                margin: 4px;
+                border: 1px solid #45a049; 
             }
-            QPushButton.record:hover { background-color: #c82333; }
-            QPushButton.stop { 
-                background-color: #6c757d; 
-                color: white; 
-                font-size: 14px; 
-                font-weight: bold; 
-                padding: 10px 20px; 
-                border-radius: 6px; 
-                margin: 4px;
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+                border: 1px solid #cccccc;
             }
-            QPushButton.skip { 
-                background-color: #ffc107; 
-                color: #212529; 
-                font-size: 12px; 
-                font-weight: bold; 
-                padding: 8px 16px; 
-                border-radius: 4px; 
-                margin: 4px;
+
+            /* ComboBox styling */
+            QComboBox {
+                background-color: white;
+                border: 1px solid #c8c8c8;
+                padding: 4px 8px;
+                border-radius: 3px;
+                min-height: 20px;
+                min-width: 100px;
             }
-            QPushButton.skip:hover { background-color: #e0a800; }
-            QPushButton.tab { 
-                background-color: #e9ecef; 
-                border: 1px solid #ced4da; 
-                padding: 6px 12px; 
-                margin-right: 4px; 
-                border-radius: 3px; 
+            QComboBox:hover {
+                border: 1px solid #a0a0a0;
             }
-            QPushButton.tab:checked { 
-                background-color: #0066cc; 
-                color: #fff; 
-                border-color: #0066cc; 
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
             }
-            QGroupBox {
+
+            /* Label styling */
+            QLabel {
+                color: #333333;
+                background-color: transparent;
+            }
+
+            /* Navigation area styling */
+            #nav_area {
+                background-color: #f8f8f8;
+                border-top: 1px solid #d0d0d0;
+                padding: 10px 15px;
+            }
+
+            /* Navigation buttons */
+            QPushButton#nav_button {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                min-width: 80px;
+            }
+            QPushButton#nav_button:hover {
+                background-color: #1976D2;
+            }
+            QPushButton#nav_button:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+
+            /* Recording controls */
+            QPushButton#record_start {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton#record_start:hover {
+                background-color: #45a049;
+            }
+            QPushButton#record_stop {
+                background-color: #E74C3C;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton#record_stop:hover {
+                background-color: #C0392B;
+            }
+            QPushButton#secondary_button {
+                background-color: #e6e6e6;
+                color: #333;
+                font-weight: bold;
+            }
+            QPushButton#secondary_button:hover {
+                background-color: #d8d8d8;
+            }
+
+            #recording_label {
+                color: #2c3e50;
                 font-weight: bold;
                 font-size: 14px;
-                color: #0066cc;
-                border: 2px solid #0066cc;
-                border-radius: 5px;
-                margin-top: 8px;
-                padding-top: 8px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            QTextEdit {
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 8px;
-                background-color: #f8f9fa;
+                font-family: Consolas, monospace;
+                letter-spacing: 1px;
             }
         """)
 
     def init_ui(self):
+        """Initialize the enhanced user interface"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(5)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Top bar: Part tabs + countdown timer + skip button
-        top_bar = QWidget()
-        top_bar.setObjectName('top_bar')
-        top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(10, 4, 10, 4)
-        top_layout.setSpacing(8)
+        # Top bar with test selection and part navigation
+        self.create_top_bar()
+        main_layout.addWidget(self.top_bar)
 
-        self.part_tabs = []
-        for i in range(3):
-            tab = QPushButton(f"Part {i+1}")
-            tab.setCheckable(True)
-            tab.setProperty('class', 'tab')
-            tab.setObjectName('tab')
-            # Disable part switching in real exam mode
-            tab.setEnabled(False)
-            self.part_tabs.append(tab)
-            top_layout.addWidget(tab)
-        self.part_tabs[0].setChecked(True)
+        # Content area
+        self.create_content_area()
+        main_layout.addWidget(self.content_frame, 1)
 
-        # Skip part button
-        self.skip_part_btn = QPushButton("⏭️ Skip Part (Score Penalty)")
-        self.skip_part_btn.setProperty('class', 'skip')
-        self.skip_part_btn.clicked.connect(self.skip_current_part)
-        top_layout.addWidget(self.skip_part_btn)
+        # Navigation area
+        self.create_navigation_area()
+        main_layout.addWidget(self.nav_area)
 
-        top_layout.addStretch()
+        self.setLayout(main_layout)
+
+    def create_top_bar(self):
+        """Create enhanced top bar with test selection and part buttons"""
+        self.top_bar = QWidget()
+        self.top_bar.setObjectName('top_bar')
+        self.top_bar.setFixedHeight(50)
+        top_layout = QHBoxLayout(self.top_bar)
+        top_layout.setContentsMargins(15, 5, 15, 5)
+        top_layout.setSpacing(15)
+
+        # Left section: Test selection
+        left_section = QWidget()
+        left_layout = QHBoxLayout(left_section)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
+
+        test_label = QLabel("Cambridge IELTS Speaking Test")
+        test_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         
-        # Always visible countdown timer
-        self.countdown_label = QLabel("05:00")
-        self.countdown_label.setObjectName('countdown_display')
-        top_layout.addWidget(self.countdown_label)
+        self.test_combo = QComboBox()
+        for test_num in self.available_tests:
+            self.test_combo.addItem(f"Test {test_num}")
+        self.test_combo.setCurrentText(f"Test {self.current_test}")
+        self.test_combo.currentTextChanged.connect(self.on_test_changed)
 
-        main_layout.addWidget(top_bar)
+        left_layout.addWidget(test_label)
+        left_layout.addWidget(self.test_combo)
 
-        # Content: WebEngineView for HTML slides with better space utilization
-        content_frame = QFrame()
-        content_frame.setFrameStyle(QFrame.StyledPanel)
-        content_frame.setStyleSheet("border: 1px solid #dee2e6; border-radius: 4px; background-color: #ffffff;")
-        content_layout = QVBoxLayout(content_frame)
+        # Center section: Part navigation buttons
+        center_section = QWidget()
+        center_layout = QHBoxLayout(center_section)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(2)
+        
+        self.part_buttons = []
+        for i in range(3):
+            btn = QPushButton(f"Part {i+1}")
+            btn.setCheckable(True)
+            btn.setMinimumWidth(80)
+            btn.clicked.connect(lambda checked, part=i: self.switch_to_part(part))
+            self.part_buttons.append(btn)
+            center_layout.addWidget(btn)
+        
+        # Set initial active part
+        self.part_buttons[0].setChecked(True)
+
+        # Right section: Progress indicator
+        right_section = QWidget()
+        right_layout = QHBoxLayout(right_section)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.progress_label = QLabel(f"Part {self.current_part + 1} of {self.total_parts}")
+        self.progress_label.setStyleSheet("font-size: 12px; font-weight: bold;")
+        right_layout.addWidget(self.progress_label)
+
+        # Add sections to top bar
+        top_layout.addWidget(left_section)
+        top_layout.addStretch()
+        top_layout.addWidget(center_section)
+        top_layout.addStretch()
+        top_layout.addWidget(right_section)
+
+    def create_content_area(self):
+        """Create clean content display area"""
+        self.content_frame = QFrame()
+        self.content_frame.setFrameStyle(QFrame.NoFrame)
+        self.content_frame.setStyleSheet("background-color: #ffffff;")
+        
+        content_layout = QVBoxLayout(self.content_frame)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
         
+        # Web view for HTML content
         self.web_view = QWebEngineView()
         self.web_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.web_view.setMinimumHeight(400)  # Ensure minimum height to fill space
         self.web_view.setStyleSheet("border: none; background-color: #ffffff;")
         self.web_view.loadFinished.connect(self.on_load_finished)
         
         content_layout.addWidget(self.web_view)
-        main_layout.addWidget(content_frame, 1)
 
-        # Recording Section (Compact and below content)
-        self.create_recording_section()
-        main_layout.addWidget(self.recording_section)
+    def create_navigation_area(self):
+        """Create navigation area with Previous/Next and Recording controls"""
+        self.nav_area = QWidget()
+        self.nav_area.setObjectName('nav_area')
+        self.nav_area.setFixedHeight(80)
+        nav_layout = QHBoxLayout(self.nav_area)
+        nav_layout.setContentsMargins(15, 10, 15, 10)
+        nav_layout.setSpacing(15)
 
-        self.setLayout(main_layout)
+        # Left side: Status info
+        self.status_label = QLabel("Ready to record. Use Start and Stop to capture your answers.")
+        self.status_label.setStyleSheet("color: #666; font-style: italic;")
+        
+        # Middle: Recording controls
+        record_panel = QWidget()
+        record_layout = QHBoxLayout(record_panel)
+        record_layout.setContentsMargins(0, 0, 0, 0)
+        record_layout.setSpacing(10)
 
-    def create_recording_section(self):
-        self.recording_section = QGroupBox("🎤 IELTS Speaking Test Recording")
-        self.recording_section.setObjectName('recording_section')
-        recording_layout = QVBoxLayout(self.recording_section)
-        recording_layout.setSpacing(8)
-        recording_layout.setContentsMargins(12, 15, 12, 12)
+        self.recording_label = QLabel("<span style='color:#E74C3C'>●</span> 00:00:00")
+        self.recording_label.setObjectName('recording_label')
+        self.recording_label.setTextFormat(Qt.RichText)
+        
+        self.record_start_btn = QPushButton("Start Recording")
+        self.record_start_btn.setObjectName('record_start')
+        self.record_start_btn.setToolTip("Start recording your answer using the microphone")
+        self.record_start_btn.clicked.connect(self.start_recording)
 
-        # Recording guidance (compact one-page card without scrolling)
-        guidance_frame = QFrame()
-        guidance_frame.setFrameStyle(QFrame.Box)
-        guidance_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 8px;
-            }
-        """)
-        guidance_layout = QVBoxLayout(guidance_frame)
-        guidance_layout.setContentsMargins(8, 8, 8, 8)
-        guidance_layout.setSpacing(4)
-        
-        # Title
-        title_label = QLabel("📋 Real Exam Instructions:")
-        title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #2c3e50; margin-bottom: 4px;")
-        guidance_layout.addWidget(title_label)
-        
-        # Instructions in a compact format
-        instructions = [
-            "• Click \"Start Recording\" to begin speaking • Speak clearly for the full duration",
-            "• No pausing or re-recording - just like the real exam • Skip parts with score penalty if needed", 
-            "• Recording auto-stops when time expires • Responses saved to Desktop/IELTS_Practice as MP3"
-        ]
-        
-        for instruction in instructions:
-            inst_label = QLabel(instruction)
-            inst_label.setStyleSheet("font-size: 11px; line-height: 1.2; color: #495057; margin: 1px 0;")
-            inst_label.setWordWrap(True)
-            guidance_layout.addWidget(inst_label)
-        
-        recording_layout.addWidget(guidance_frame)
+        self.record_stop_btn = QPushButton("Stop")
+        self.record_stop_btn.setObjectName('record_stop')
+        self.record_stop_btn.setToolTip("Stop recording and save to file")
+        self.record_stop_btn.clicked.connect(self.stop_recording)
 
-        # Recording controls
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(10)
-        
-        self.rec_status = QLabel("🔴 Status: Ready to Record")
-        self.rec_status.setStyleSheet("font-size: 13px; font-weight: bold; color: #dc3545;")
-        controls_layout.addWidget(self.rec_status)
-        
-        controls_layout.addStretch()
-        
-        self.start_rec_btn = QPushButton("🎤 Start Recording")
-        self.start_rec_btn.setProperty('class', 'record')
-        self.start_rec_btn.clicked.connect(self.start_recording_and_timer)
-        controls_layout.addWidget(self.start_rec_btn)
-        
-        recording_layout.addLayout(controls_layout)
+        self.open_folder_btn = QPushButton("Open Folder")
+        self.open_folder_btn.setObjectName('secondary_button')
+        self.open_folder_btn.setToolTip("Open the recordings folder")
+        self.open_folder_btn.clicked.connect(self.open_recordings_folder)
 
-        # Progress bar for visual feedback
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setMaximumHeight(8)
-        recording_layout.addWidget(self.progress_bar)
+        record_layout.addWidget(self.recording_label)
+        record_layout.addWidget(self.record_start_btn)
+        record_layout.addWidget(self.record_stop_btn)
+        record_layout.addWidget(self.open_folder_btn)
 
-    def skip_current_part(self):
-        """Skip current part with score penalty warning"""
-        if self.current_part >= 2:  # Already on last part
-            return
+        # Right side: Navigation buttons
+        nav_buttons = QWidget()
+        nav_buttons_layout = QHBoxLayout(nav_buttons)
+        nav_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        nav_buttons_layout.setSpacing(10)
+        
+        self.back_button = QPushButton("← Previous")
+        self.back_button.setObjectName('nav_button')
+        self.back_button.clicked.connect(self.go_previous)
+        
+        self.next_button = QPushButton("Next →")
+        self.next_button.setObjectName('nav_button')
+        self.next_button.clicked.connect(self.go_next)
+        
+        nav_buttons_layout.addWidget(self.back_button)
+        nav_buttons_layout.addWidget(self.next_button)
+        
+        nav_layout.addWidget(self.status_label)
+        nav_layout.addStretch()
+        nav_layout.addWidget(record_panel)
+        nav_layout.addStretch()
+        nav_layout.addWidget(nav_buttons)
+
+    def on_test_changed(self, test_text):
+        """Handle test selection change"""
+        try:
+            # Extract test number from text like "Test 1"
+            self.current_test = int(test_text.split()[-1])
+            self.load_current_content()
+        except (ValueError, IndexError):
+            print(f"Error parsing test number from: {test_text}")
+
+    def switch_to_part(self, part_index: int):
+        """Switch to specified part"""
+        if 0 <= part_index < self.total_parts:
+            # Update button states
+            for i, btn in enumerate(self.part_buttons):
+                btn.setChecked(i == part_index)
             
-        reply = QMessageBox.question(
-            self, 
-            'Skip Part Warning', 
-            f'Are you sure you want to skip Part {self.current_part + 1}?\n\n'
-            f'⚠️ WARNING: Skipping will result in a significant score penalty!\n'
-            f'• You will receive 0 points for this part\n'
-            f'• This will negatively impact your overall speaking score\n'
-            f'• Consider attempting the questions even if difficult\n\n'
-            f'Skip anyway?',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            # Mark part as skipped
-            self.part_skipped[self.current_part] = True
-            
-            # Stop current recording if active
-            if self.is_recording:
-                self.stop_recording()
-            
-            # Stop timer
-            if self.exam_timer.isActive():
-                self.exam_timer.stop()
-            
-            # Move to next part
-            if self.current_part < 2:
-                self.current_part += 1
-                self.part_tabs[self.current_part].setChecked(True)
-                self.part_tabs[self.current_part - 1].setChecked(False)
-                self.load_part(self.current_part)
-                self.progress_bar.setVisible(False)
-                
-                # Reset for next part
-                self.rec_status.setText(f"⚠️ Part {self.current_part} Skipped - Ready for Part {self.current_part + 1}")
-                self.start_rec_btn.setEnabled(True)
-                
-                # Update skip button
-                if self.current_part >= 2:
-                    self.skip_part_btn.setEnabled(False)
-                    self.skip_part_btn.setText("⏭️ Last Part")
-                
-                # Disable navigation for the new part until recording starts
-                self.disable_navigation_until_recording()
-            else:
-                self.finish_exam()
+            self.current_part = part_index
+            self.load_current_content()
+            self.update_navigation_buttons()
+            self.update_progress_label()
 
-    def start_recording_and_timer(self):
-        """Start both recording and exam timer for real exam simulation"""
-        # Preflight checks: ensure ffmpeg is available and disk space is sufficient
-        ffmpeg_path = shutil.which('ffmpeg')
-        if not ffmpeg_path:
-            self.rec_status.setText("❌ ffmpeg not found. Please install ffmpeg to save MP3 recordings.")
-            return
-        if not self.check_disk_space():
-            self.rec_status.setText("❌ Insufficient disk space in IELTS_Practice folder.")
-            return
+    def go_previous(self):
+        """Navigate to previous part"""
+        if self.current_part > 0:
+            self.switch_to_part(self.current_part - 1)
 
-        if not self.part_started[self.current_part]:
-            self.part_started[self.current_part] = True
-            self.current_time_left = self.part_durations[self.current_part]
-            self.progress_bar.setMaximum(self.part_durations[self.current_part])
-            self.progress_bar.setVisible(True)
-            self.exam_timer.start(1000)  # Update every second
-            
-        self.start_recording()
-        
-        # Enable navigation when recording starts (but remove Previous button)
-        self.enable_navigation_after_recording_start()
+    def go_next(self):
+        """Navigate to next part"""
+        if self.current_part < self.total_parts - 1:
+            self.switch_to_part(self.current_part + 1)
 
-    def enable_navigation_after_recording_start(self):
-        """Enable Next button and remove Previous button when recording starts"""
-        js_code = """
-        // Set the global flag to indicate recording has started
-        window.recordingStarted = true;
-        
-        // Enable Next buttons and completely remove Previous buttons
-        function enableNavigationAfterRecording() {
-            const allButtons = document.querySelectorAll('button');
-            allButtons.forEach(btn => {
-                // Check for Next buttons by onclick content or data attributes
-                if (btn.onclick && (
-                    btn.onclick.toString().includes('nextSection') ||
-                    btn.onclick.toString().includes('nextSlide') ||
-                    btn.onclick.toString().includes('preventDefault')
-                )) {
-                    // Check if this is a disabled Next button
-                    if (btn.onclick.toString().includes('preventDefault') && 
-                        btn.onclick.toString().includes('start recording first')) {
-                        
-                        // Enable Next buttons and restore original functionality
-                        btn.disabled = false;
-                        btn.style.opacity = '1';
-                        btn.style.cursor = 'pointer';
-                        
-                        // Restore original onclick if it was stored
-                        if (btn.originalOnclick) {
-                            btn.onclick = btn.originalOnclick;
-                        } else {
-                            // Fallback: try to restore from global functions
-                            const originalNextSection = window.originalNextSection || window.nextSection;
-                            const originalNextSlide = window.originalNextSlide || window.nextSlide;
-                            
-                            if (originalNextSection) {
-                                btn.onclick = function() { originalNextSection(); };
-                            } else if (originalNextSlide) {
-                                btn.onclick = function() { originalNextSlide(); };
-                            }
-                        }
-                    }
-                } else if (btn.onclick && (
-                    btn.onclick.toString().includes('previousSection') ||
-                    btn.onclick.toString().includes('prevSlide')
-                )) {
-                    // Completely remove Previous buttons
-                    btn.style.display = 'none';
-                    btn.remove();
-                }
-            });
-            
-            // Also check for buttons with specific classes or text
-            const navButtons = document.querySelectorAll('.btn-secondary, .btn-primary, button[class*="nav"], button[class*="back"], button[class*="next"]');
-            navButtons.forEach(btn => {
-                if (btn.textContent.toLowerCase().includes('next')) {
-                    // Check if this is a disabled Next button
-                    if (btn.onclick && btn.onclick.toString().includes('preventDefault') && 
-                        btn.onclick.toString().includes('start recording first')) {
-                        
-                        // Enable Next buttons
-                        btn.disabled = false;
-                        btn.style.opacity = '1';
-                        btn.style.cursor = 'pointer';
-                        
-                        // Restore original onclick if it was stored
-                        if (btn.originalOnclick) {
-                            btn.onclick = btn.originalOnclick;
-                        } else {
-                            // Fallback: try to restore from global functions
-                            const originalNextSection = window.originalNextSection || window.nextSection;
-                            const originalNextSlide = window.originalNextSlide || window.nextSlide;
-                            
-                            if (originalNextSection) {
-                                btn.onclick = function() { originalNextSection(); };
-                            } else if (originalNextSlide) {
-                                btn.onclick = function() { originalNextSlide(); };
-                            }
-                        }
-                    }
-                } else if (btn.textContent.toLowerCase().includes('previous') ||
-                           btn.textContent.toLowerCase().includes('back')) {
-                    // Completely remove Previous buttons
-                    btn.style.display = 'none';
-                    btn.remove();
-                }
-            });
-            
-            console.log('Navigation enabled: Next buttons unlocked, Previous buttons removed');
-        }
-        
-        enableNavigationAfterRecording();
-        """
-        
-        self.web_view.page().runJavaScript(js_code)
+    def update_navigation_buttons(self):
+        """Update navigation button states"""
+        self.back_button.setEnabled(self.current_part > 0)
+        self.next_button.setEnabled(self.current_part < self.total_parts - 1)
 
-    def disable_navigation_until_recording(self):
-        """Disable Next buttons until recording starts (for new parts)"""
-        js_code = """
-        // Disable Next buttons until recording starts
-        function disableNavigationUntilRecording() {
-            const nextButtons = document.querySelectorAll('button[onclick*="nextSection"], button[onclick*="nextSlide"]');
-            nextButtons.forEach(btn => {
-                btn.disabled = true;
-                btn.style.opacity = '0.3';
-                btn.style.cursor = 'not-allowed';
-                btn.onclick = function(e) { 
-                    e.preventDefault(); 
-                    e.stopPropagation(); 
-                    alert('Please start recording first to unlock navigation.');
-                    return false; 
-                };
-            });
-            
-            // Also check for buttons with specific classes or text
-            const allNavButtons = document.querySelectorAll('.btn-secondary, .btn-primary, button[class*="nav"], button[class*="next"]');
-            allNavButtons.forEach(btn => {
-                if (btn.textContent.toLowerCase().includes('next')) {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.3';
-                    btn.style.cursor = 'not-allowed';
-                    btn.onclick = function(e) { 
-                        e.preventDefault(); 
-                        e.stopPropagation(); 
-                        alert('Please start recording first to unlock navigation.');
-                        return false; 
-                    };
-                }
-            });
-        }
-        
-        disableNavigationUntilRecording();
-        """
-        
-        self.web_view.page().runJavaScript(js_code)
+    def update_progress_label(self):
+        """Update progress indicator"""
+        self.progress_label.setText(f"Part {self.current_part + 1} of {self.total_parts}")
 
-    def disable_all_navigation(self):
-        """Disable all navigation when exam is complete"""
-        js_code = """
-        // Disable all navigation buttons
-        function disableAllNavigation() {
-            const allButtons = document.querySelectorAll('button');
-            allButtons.forEach(btn => {
-                if (btn.onclick && (
-                    btn.onclick.toString().includes('nextSection') ||
-                    btn.onclick.toString().includes('nextSlide') ||
-                    btn.onclick.toString().includes('previousSection') ||
-                    btn.onclick.toString().includes('prevSlide')
-                )) {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.3';
-                    btn.style.cursor = 'not-allowed';
-                    btn.onclick = function(e) { 
-                        e.preventDefault(); 
-                        e.stopPropagation(); 
-                        alert('Exam is complete. Navigation is disabled.');
-                        return false; 
-                    };
-                }
-            });
-            
-            // Also check for buttons with specific classes or text
-            const navButtons = document.querySelectorAll('.btn-secondary, .btn-primary, button[class*="nav"], button[class*="back"], button[class*="next"]');
-            navButtons.forEach(btn => {
-                if (btn.textContent.toLowerCase().includes('next') || 
-                    btn.textContent.toLowerCase().includes('previous') ||
-                    btn.textContent.toLowerCase().includes('back')) {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.3';
-                    btn.style.cursor = 'not-allowed';
-                    btn.onclick = function(e) { 
-                        e.preventDefault(); 
-                        e.stopPropagation(); 
-                        alert('Exam is complete. Navigation is disabled.');
-                        return false; 
-                    };
-                }
-            });
-        }
+    def load_current_content(self):
+        """Load the HTML file for the current test and part"""
+        file_path = self.get_part_file_path(self.current_test, self.current_part)
         
-        disableAllNavigation();
-        """
-        
-        self.web_view.page().runJavaScript(js_code)
-
-    def auto_advance_part(self):
-        """Automatically advance to next part (real exam behavior)"""
-        self.current_part += 1
-        self.part_tabs[self.current_part].setChecked(True)
-        self.part_tabs[self.current_part - 1].setChecked(False)
-        self.load_part(self.current_part)
-        self.progress_bar.setVisible(False)
-        
-        # Reset for next part
-        self.rec_status.setText("🔴 Status: Ready to Record Next Part")
-        self.start_rec_btn.setEnabled(True)
-        
-        # Disable navigation for the new part until recording starts
-        self.disable_navigation_until_recording()
-
-    def finish_exam(self):
-        """Handle exam completion"""
-        skipped_parts = [i+1 for i, skipped in enumerate(self.part_skipped) if skipped]
-        if skipped_parts:
-            self.rec_status.setText(f"✅ Exam Complete! Parts {', '.join(map(str, skipped_parts))} were skipped (score penalty applied).")
+        if os.path.exists(file_path):
+            url = QUrl.fromLocalFile(os.path.abspath(file_path))
+            self.web_view.load(url)
         else:
-            self.rec_status.setText("✅ Exam Complete! All recordings saved.")
-            
-        self.start_rec_btn.setEnabled(False)
-        self.skip_part_btn.setEnabled(False)
-        self.countdown_label.setText("DONE")
-        self.countdown_label.setStyleSheet("background-color: #28a745; color: white; font-size: 20px; font-weight: bold; padding: 8px 12px; border-radius: 5px;")
-        
-        # Disable all navigation after exam completion
-        self.disable_all_navigation()
+            self.show_error_message(
+                f"Part {self.current_part + 1} not found", 
+                f"Test {self.current_test}, Part {self.current_part + 1} file not found: {file_path}"
+            )
 
-    def update_countdown(self):
-        """Update countdown timer and auto-advance parts"""
-        if self.current_time_left > 0:
-            self.current_time_left -= 1
-            minutes = self.current_time_left // 60
-            seconds = self.current_time_left % 60
-            self.countdown_label.setText(f"{minutes:02d}:{seconds:02d}")
-            
-            # Update progress bar
-            elapsed = self.part_durations[self.current_part] - self.current_time_left
-            self.progress_bar.setValue(elapsed)
-            
-            # Warning colors
-            if self.current_time_left <= 30:
-                self.countdown_label.setStyleSheet("background-color: #ff0000; color: white; font-size: 24px; font-weight: bold; padding: 10px; border-radius: 5px;")
-            elif self.current_time_left <= 60:
-                self.countdown_label.setStyleSheet("background-color: #ff8800; color: white; font-size: 24px; font-weight: bold; padding: 10px; border-radius: 5px;")
-        else:
-            # Time's up - auto advance to next part
-            self.exam_timer.stop()
-            if self.is_recording:
-                self.stop_recording()
-            
-            if self.current_part < 2:
-                self.auto_advance_part()
-            else:
-                self.finish_exam()
-
-    def load_part(self, part_index: int):
-        file_path = self.part_files[part_index]
-        if not os.path.exists(file_path):
-            html = f"""
-                <html><body style='font-family: Arial; padding:20px;'>
-                    <h2>Missing content</h2>
-                    <p>Could not find: {file_path}</p>
-                </body></html>
-            """
-            self.web_view.setHtml(html)
-            return
-        url = QUrl.fromLocalFile(os.path.abspath(file_path))
-        self.web_view.load(url)
+    def show_error_message(self, title: str, message: str):
+        """Display error message in web view"""
+        html = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    padding: 40px;
+                    text-align: center;
+                    background-color: #f8f9fa;
+                }}
+                .error-container {{
+                    background-color: white;
+                    padding: 30px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #dc3545;
+                    margin-bottom: 20px;
+                }}
+                p {{
+                    color: #6c757d;
+                    font-size: 16px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <h1>{title}</h1>
+                <p>{message}</p>
+            </div>
+        </body>
+        </html>
+        """
+        self.web_view.setHtml(html)
 
     def on_load_finished(self, ok: bool):
-        """Inject CSS to make question fonts bigger and improve readability"""
+        """Apply styling improvements when content loads"""
         if ok:
+            # Inject CSS for better readability
             css_injection = """
-            // Inject CSS to make questions more readable
             var style = document.createElement('style');
             style.textContent = `
-                /* Make question text larger and more readable */
-                .question, .question-text, h1, h2, h3, h4, h5, h6 {
-                    font-size: 18px !important;
-                    line-height: 1.4 !important;
-                    font-weight: 600 !important;
-                    color: #2c3e50 !important;
-                    margin-bottom: 12px !important;
-                }
-                
-                /* Make all paragraph text larger */
-                p, div, span, li {
-                    font-size: 16px !important;
-                    line-height: 1.5 !important;
-                    color: #34495e !important;
-                }
-                
-                /* Make instruction text stand out */
-                .instruction, .instructions, .note {
-                    font-size: 17px !important;
-                    font-weight: 500 !important;
-                    background-color: #f8f9fa !important;
-                    padding: 10px !important;
-                    border-left: 4px solid #0066cc !important;
-                    margin: 10px 0 !important;
-                }
-                
-                /* Improve button visibility */
-                button {
-                    font-size: 14px !important;
-                    padding: 8px 16px !important;
-                    margin: 4px !important;
-                }
-                
-                /* Better spacing for content and fill available space */
                 body {
-                    padding: 15px !important;
+                    font-family: Arial, sans-serif !important;
+                    line-height: 1.6 !important;
+                    padding: 20px !important;
                     max-width: none !important;
-                    min-height: 100vh !important;
                     margin: 0 !important;
                 }
                 
-                /* Ensure content fills available space */
-                html, body {
-                    height: 100% !important;
-                    overflow-y: auto !important;
+                h1, h2, h3, h4, h5, h6 {
+                    color: #2c3e50 !important;
+                    margin-bottom: 15px !important;
                 }
                 
-                /* Reduce excessive margins and padding */
-                * {
-                    margin-top: 0 !important;
+                p, div, span, li {
+                    font-size: 16px !important;
+                    color: #34495e !important;
                 }
                 
-                /* Better content distribution */
-                .content, .main-content, .question-content {
-                    min-height: 300px !important;
-                    display: block !important;
+                .question, .instruction {
+                    font-size: 18px !important;
+                    font-weight: 500 !important;
+                    margin-bottom: 15px !important;
                 }
                 
-                /* Make lists more readable */
+                button {
+                    font-size: 14px !important;
+                    padding: 8px 16px !important;
+                    margin: 5px !important;
+                    border-radius: 4px !important;
+                }
+                
                 ul, ol {
                     padding-left: 25px !important;
                 }
@@ -696,193 +562,123 @@ class SpeakingTestUI(QWidget):
                 li {
                     margin-bottom: 8px !important;
                 }
-                
-                /* Improve table readability if present */
-                table {
-                    font-size: 15px !important;
-                }
-                
-                th, td {
-                    padding: 8px 12px !important;
-                }
             `;
             document.head.appendChild(style);
             """
-            
             self.web_view.page().runJavaScript(css_injection)
-            
-            # Disable navigation until recording starts (for new parts)
-            if not self.part_started[self.current_part]:
-                self.disable_navigation_until_recording()
 
-    def cleanup_recording_resources(self):
-        """Stop timers/devices and release resources."""
-        try:
-            if self.audio_timer:
-                self.audio_timer.stop()
-                self.audio_timer.deleteLater()
-                self.audio_timer = None
-        except Exception:
-            pass
-        try:
-            if self.audio_input:
-                self.audio_input.stop()
-                self.audio_input.deleteLater()
-                self.audio_input = None
-        except Exception:
-            pass
-        try:
-            if self.wave_fp:
-                self.wave_fp.close()
-                self.wave_fp = None
-        except Exception:
-            pass
+    # ===== Recording Logic =====
+    def update_recording_ui_state(self):
+        """Enable/disable recording controls based on state and support."""
+        supported = self.audio_supported
+        recording = self.audio_input is not None
 
-    def convert_to_mp3(self) -> bool:
-        """Convert the temporary WAV file to MP3 using ffmpeg."""
-        try:
-            ffmpeg_path = shutil.which('ffmpeg')
-            if not ffmpeg_path or not os.path.exists(self.temp_wav_path):
-                return False
-            result = subprocess.run([
-                ffmpeg_path, '-y', '-i', os.path.abspath(self.temp_wav_path), os.path.abspath(self.final_mp3_path)
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-            return result.returncode == 0 and os.path.exists(self.final_mp3_path)
-        except Exception:
-            return False
+        self.record_start_btn.setEnabled(supported and not recording)
+        self.record_stop_btn.setEnabled(supported and recording)
+        self.open_folder_btn.setEnabled(True)
 
-    def start_recording(self):
-        if self.is_recording:
-            return
-        # Setup audio format safely
-        try:
-            fmt = self.get_valid_audio_format()
-            info = QAudioDeviceInfo.defaultInputDevice()
-        except Exception as e:
-            self.rec_status.setText(f"❌ Audio device/format error: {e}")
-            return
-        
-        # Prepare file paths
-        self.temp_wav_path, self.final_mp3_path = self.build_output_paths()
-        
-        # Ensure no stray timers from prior sessions
-        if self.audio_timer:
-            try:
-                self.audio_timer.stop()
-                self.audio_timer.deleteLater()
-            except Exception:
-                pass
-            self.audio_timer = None
-        
-        # Start audio input (pull mode)
-        try:
-            self.audio_input = QAudioInput(info, fmt, self)
-            self.audio_io = self.audio_input.start()
-        except Exception as e:
-            self.rec_status.setText(f"❌ Failed to start audio input: {e}")
-            return
-        
-        # Open WAV writer
-        try:
-            self.wave_fp = wave.open(self.temp_wav_path, 'wb')
-            self.wave_fp.setnchannels(fmt.channelCount())
-            self.wave_fp.setsampwidth(int(fmt.sampleSize() / 8))
-            self.wave_fp.setframerate(fmt.sampleRate())
-        except Exception as e:
-            self.rec_status.setText(f"❌ Failed to open WAV file: {e}")
-            try:
-                self.audio_input.stop()
-            except Exception:
-                pass
-            return
-        
-        # Poll recorded data into WAV
-        self.audio_timer = QTimer(self)
-        self.audio_timer.timeout.connect(self._poll_audio_data)
-        self.audio_timer.start(50)
-        self.is_recording = True
-        self.rec_status.setText(f"🔴 Recording Part {self.current_part + 1}... (saving to {os.path.basename(self.final_mp3_path)})")
-        self.start_rec_btn.setEnabled(False)
-
-    def _poll_audio_data(self):
-        if not self.is_recording:
-            return
-        if not self.audio_io or not self.wave_fp:
-            return
-        try:
-            data = self.audio_io.readAll()
-            if data and len(data) > 0:
-                self.wave_fp.writeframes(bytes(data))
-        except Exception as e:
-            # Gracefully stop on polling error
-            self.rec_status.setText(f"❌ Recording error: {e}")
-            self.stop_recording()
-
-    def stop_recording(self):
-        if not self.is_recording:
-            return
-        self.is_recording = False
-        self.cleanup_recording_resources()
-        
-        # Convert to MP3
-        if self.convert_to_mp3():
-            self.rec_status.setText(f"✅ Part {self.current_part + 1} recorded and saved as MP3!")
-            # Clean up temporary WAV file
-            try:
-                if os.path.exists(self.temp_wav_path):
-                    os.remove(self.temp_wav_path)
-            except Exception:
-                pass
+        if not supported:
+            self.status_label.setText("Recording is not available: QtMultimedia module not found.")
+        elif recording:
+            self.status_label.setText("Recording in progress...")
         else:
-            self.rec_status.setText("❌ Failed to convert to MP3. Please ensure ffmpeg is installed.")
+            self.status_label.setText("Ready to record. Use Start and Stop to capture your answers.")
 
-    # === Recording Helpers ===
-    def get_storage_dir(self):
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        target = os.path.join(desktop, "IELTS_Practice")
-        os.makedirs(target, exist_ok=True)
-        return target
+    def format_seconds(self, secs: int) -> str:
+        h = secs // 3600
+        m = (secs % 3600) // 60
+        s = secs % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
 
-    def check_disk_space(self, min_free_mb: int = 20) -> bool:
-        """Ensure sufficient free space in the storage directory."""
-        try:
-            total, used, free = shutil.disk_usage(self.storage_dir)
-            return (free // (1024 * 1024)) >= min_free_mb
-        except Exception:
-            return True  # Be permissive if we cannot determine
+    def update_recording_timer(self):
+        if self.audio_input is not None:
+            self.record_seconds += 1
+            self.dot_visible = not self.dot_visible
+            dot_html = "<span style='color:#E74C3C'>●</span>" if self.dot_visible else "<span style='color:#E74C3C; opacity:0'>●</span>"
+            self.recording_label.setText(f"{dot_html} {self.format_seconds(self.record_seconds)}")
 
-    def build_output_paths(self):
-        ts = datetime.now().strftime('%Y%m%d_%H%M')
-        part = self.current_part + 1
-        wav = os.path.join(self.storage_dir, f"{ts}_Part{part}.wav")
-        mp3 = os.path.join(self.storage_dir, f"{ts}_Part{part}.mp3")
-        return wav, mp3
-
-    def get_valid_audio_format(self) -> QAudioFormat:
+    def get_default_audio_format(self):
+        if not self.audio_supported:
+            return None
         fmt = QAudioFormat()
-        fmt.setSampleRate(16000)
+        fmt.setSampleRate(44100)
         fmt.setChannelCount(1)
         fmt.setSampleSize(16)
         fmt.setCodec("audio/pcm")
         fmt.setByteOrder(QAudioFormat.LittleEndian)
         fmt.setSampleType(QAudioFormat.SignedInt)
         info = QAudioDeviceInfo.defaultInputDevice()
+        if info.isNull():
+            return None
         if not info.isFormatSupported(fmt):
-            nearest = info.nearestFormat(fmt)
-            # Basic validation of nearest format
-            if nearest.sampleRate() < 8000 or nearest.sampleSize() < 16:
-                raise RuntimeError("Unsupported audio format from default input device.")
-            return nearest
+            fmt = info.preferredFormat()
         return fmt
 
-    def load_part(self, part_index: int):
-        """Load the HTML file for the specified part"""
-        if 0 <= part_index < len(self.part_files):
-            file_path = self.part_files[part_index]
-            if os.path.exists(file_path):
-                url = QUrl.fromLocalFile(file_path)
-                self.web_view.load(url)
-            else:
-                self.web_view.setHtml(f"<h1>Part {part_index + 1} file not found</h1><p>Expected: {file_path}</p>")
-        else:
-            self.web_view.setHtml("<h1>Invalid part</h1>")
+    def generate_recording_path(self) -> str:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"Speaking-Test-{self.current_test}-Part-{self.current_part + 1}-{timestamp}.wav"
+        return os.path.join(self.recordings_dir, filename)
+
+    def start_recording(self):
+        if not self.audio_supported:
+            QMessageBox.warning(self, "Recording Unavailable", "QtMultimedia is not available. Please install PyQt5 with QtMultimedia support.")
+            return
+        if self.audio_input is not None:
+            return  # already recording
+
+        fmt = self.get_default_audio_format()
+        if fmt is None:
+            QMessageBox.warning(self, "No Input Device", "No audio input device found.")
+            return
+
+        path = self.generate_recording_path()
+        self.wave_writer = WavFileWriter(path, fmt.sampleRate(), fmt.channelCount(), fmt.sampleSize())
+        if not self.wave_writer.open():
+            QMessageBox.critical(self, "File Error", f"Cannot open file for writing: {path}")
+            self.wave_writer = None
+            return
+
+        try:
+            # Create audio input and start streaming to QFile within WavFileWriter
+            self.audio_input = QAudioInput(fmt, self)
+            self.audio_input.start(self.wave_writer.file)
+        except Exception as e:
+            QMessageBox.critical(self, "Recording Error", f"Failed to start recording: {e}")
+            self.wave_writer.file.close()
+            self.wave_writer = None
+            self.audio_input = None
+            return
+
+        self.record_seconds = 0
+        self.dot_visible = True
+        self.recording_label.setText("<span style='color:#E74C3C'>●</span> 00:00:00")
+        self.record_timer.start()
+        self.update_recording_ui_state()
+
+    def stop_recording(self):
+        if self.audio_input is None:
+            return
+        try:
+            self.audio_input.stop()
+        except Exception as e:
+            QMessageBox.warning(self, "Stop Error", f"Failed to stop: {e}")
+        finally:
+            self.record_timer.stop()
+            # Finalize WAV header
+            try:
+                if self.wave_writer is not None:
+                    self.wave_writer.finalize()
+                    saved_path = self.wave_writer.path
+                    self.status_label.setText(f"Saved recording to: {saved_path}")
+            except Exception as e:
+                QMessageBox.warning(self, "Save Error", f"Failed to finalize WAV: {e}")
+            
+            # Cleanup
+            self.audio_input = None
+            self.wave_writer = None
+            self.dot_visible = False
+            self.recording_label.setText(f"<span style='color:#95a5a6'>●</span> {self.format_seconds(self.record_seconds)}")
+            self.update_recording_ui_state()
+
+    def open_recordings_folder(self):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.recordings_dir))

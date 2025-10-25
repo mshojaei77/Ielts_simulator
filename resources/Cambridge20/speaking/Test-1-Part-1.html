@@ -12,99 +12,31 @@
     </div>
 
     <div class="container">
-        <div class="slide-card">
-            <!-- Slides -->
-            <div class="slide active" data-index="0">
-                <h2>Test 1-Part 1</h2>
-                <div class="note">
-                    This part lasts 4–5 minutes. You will answer short questions on familiar topics. Speak naturally and give full answers with reasons and examples.
-                </div>
-                <p>
-                    Please answer the questions 1-4
-                </p>
+        <div class="content-card">
+            <h2>Test 1-Part 1</h2>
+            <div class="note">
+                This part lasts 4–5 minutes. You will answer short questions on familiar topics. Speak naturally and give full answers with reasons and examples.
             </div>
+            <p>
+                Please answer the questions 1-4
+            </p>
 
             <!-- Question 1 -->
-            <div class="slide" data-index="1">
-                <div class="question">1. How much walking do you do in your daily life?</div>
-            </div>
+            <div class="question">1. How much walking do you do in your daily life?</div>
 
             <!-- Question 2 -->
-            <div class="slide" data-index="2">
-                <div class="question">2. Did you walk more when you were at school than now?</div>
-            </div>
+            <div class="question">2. Did you walk more when you were at school than now?</div>
 
             <!-- Question 3 -->
-            <div class="slide" data-index="3">
-                <div class="question">3. What places are there to go for a walk near where you live?</div>
-            </div>
+            <div class="question">3. What places are there to go for a walk near where you live?</div>
 
             <!-- Question 4 -->
-            <div class="slide" data-index="4">
-                <div class="question">4. Would you ever like to go on a walking holiday?</div>
-            </div>
-
-            <!-- End slide -->
-            <div class="slide" data-index="5">
-                <h2>End of Part 1</h2>
-                <p>That's all for Part 1. Use the controls to proceed to Part 2 in the app.</p>
-            </div>
+            <div class="question">4. Would you ever like to go on a walking holiday?</div>
         </div>
     </div>
 
-    <div class="footer-bar">
-        <div class="status" id="status">Slide 1 of 6</div>
-        <div class="nav-buttons">
-            <button class="back" id="prevBtn" onclick="prevSlide()" disabled>◀ Previous</button>
-            <button id="nextBtn" onclick="nextSlide()">Next ▶</button>
-        </div>
-    </div>
 
-    <script>
-        let currentIndex = 0;
-        let slides = [];
 
-        function renderSlide(index) {
-            slides.forEach((el, i) => {
-                el.classList.toggle('active', i === index);
-            });
-            currentIndex = index;
-            const total = slides.length;
-            // Update status text
-            const status = document.getElementById('status');
-            status.textContent = `Slide ${index + 1} of ${total}`;
-            // Update buttons
-            const prevBtn = document.getElementById('prevBtn');
-            const nextBtn = document.getElementById('nextBtn');
-            prevBtn.disabled = index === 0;
-            nextBtn.disabled = index === total - 1;
-            // Dispatch event for PyQt
-            window.dispatchEvent(new CustomEvent('slideChanged', { detail: { current: index + 1, total } }));
-        }
 
-        function nextSlide() {
-            if (currentIndex < slides.length - 1) {
-                renderSlide(currentIndex + 1);
-            }
-        }
-        function prevSlide() {
-            if (currentIndex > 0) {
-                renderSlide(currentIndex - 1);
-            }
-        }
-        function goToSlide(idx) {
-            if (idx >= 0 && idx < slides.length) {
-                renderSlide(idx);
-            }
-        }
-        function getSlideStatus() {
-            return { current: currentIndex + 1, total: slides.length };
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            slides = Array.from(document.querySelectorAll('.slide-card .slide'));
-            renderSlide(0);
-        });
-    </script>
 </body>
 </html>
