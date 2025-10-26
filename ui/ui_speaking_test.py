@@ -1,6 +1,9 @@
 import os
 import struct
 import datetime
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import app_logger
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, 
     QFrame, QComboBox, QSpacerItem, QMessageBox
@@ -124,7 +127,7 @@ class SpeakingTestUI(QWidget):
                                 continue
                 tests = sorted(list(test_numbers))
         except Exception as e:
-            print(f"Error loading available tests: {e}")
+            app_logger.debug(f"Error loading available tests: {e}")
         
         # If no tests found, default to Test 1
         return tests if tests else [1]
@@ -431,7 +434,7 @@ class SpeakingTestUI(QWidget):
             self.current_test = int(test_text.split()[-1])
             self.load_current_content()
         except (ValueError, IndexError):
-            print(f"Error parsing test number from: {test_text}")
+            app_logger.debug(f"Error parsing test number from: {test_text}")
 
     def switch_to_part(self, part_index: int):
         """Switch to specified part"""

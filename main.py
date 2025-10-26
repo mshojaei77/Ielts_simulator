@@ -1,4 +1,5 @@
 import sys
+from logger import app_logger
 try:
     from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, QMessageBox
     from PyQt5.QtCore import Qt
@@ -6,17 +7,17 @@ try:
     try:
         from ui.ui_reading_test import ReadingTestUI
     except ImportError as e:
-        print(f"Error importing ReadingTestUI: {e}")
+        app_logger.debug(f"Error importing ReadingTestUI: {e}")
     try:
         from ui.ui_listening_test import ListeningTestUI
     except ImportError as e:
-        print(f"Error importing ListeningTestUI: {e}")
+        app_logger.debug(f"Error importing ListeningTestUI: {e}")
     try:
         from ui.ui_speaking_test import SpeakingTestUI
     except ImportError as e:
-        print(f"Error importing SpeakingTestUI: {e}")
+        app_logger.debug(f"Error importing SpeakingTestUI: {e}")
 except ImportError as e:
-    print(f"Error importing PyQt5 modules: {e}")
+    app_logger.debug(f"Error importing PyQt5 modules: {e}")
     sys.exit(1)
 
 class IELTSTestSimulator(QMainWindow):
@@ -115,30 +116,30 @@ class IELTSTestSimulator(QMainWindow):
         # Create test section UIs
         try:
             self.listening_ui = ListeningTestUI()
-            print("Successfully created ListeningTestUI")
+            app_logger.debug("Successfully created ListeningTestUI")
         except Exception as e:
-            print(f"Error creating ListeningTestUI: {e}")
+            app_logger.debug(f"Error creating ListeningTestUI: {e}")
             self.listening_ui = QWidget()
             
         try:
             self.reading_ui = ReadingTestUI()
-            print("Successfully created ReadingTestUI")
+            app_logger.debug("Successfully created ReadingTestUI")
         except Exception as e:
-            print(f"Error creating ReadingTestUI: {e}")
+            app_logger.debug(f"Error creating ReadingTestUI: {e}")
             self.reading_ui = QWidget()
             
         try:
             self.writing_ui = WritingTestUI()
-            print("Successfully created WritingTestUI")
+            app_logger.debug("Successfully created WritingTestUI")
         except Exception as e:
-            print(f"Error creating WritingTestUI: {e}")
+            app_logger.debug(f"Error creating WritingTestUI: {e}")
             self.writing_ui = QWidget()
             
         try:
             self.speaking_ui = SpeakingTestUI()
-            print("Successfully created SpeakingTestUI")
+            app_logger.debug("Successfully created SpeakingTestUI")
         except Exception as e:
-            print(f"Error creating SpeakingTestUI: {e}")
+            app_logger.debug(f"Error creating SpeakingTestUI: {e}")
             self.speaking_ui = QWidget()
         
         # Add test sections to stacked widget
@@ -205,7 +206,7 @@ if __name__ == "__main__":
         window.showMaximized()  # Start maximized like test centers
         sys.exit(app.exec_())
     except Exception as e:
-        print(f"Error starting application: {e}")
+        app_logger.debug(f"Error starting application: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

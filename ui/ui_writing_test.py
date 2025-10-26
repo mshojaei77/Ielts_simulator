@@ -1,5 +1,8 @@
 import json
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import app_logger
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget,
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -128,7 +131,7 @@ class WritingTestUI(QWidget):
             }
             
         except Exception as e:
-            print(f"Error loading writing subjects: {str(e)}")
+            app_logger.debug(f"Error loading writing subjects: {str(e)}")
             # Return default structure
             return {
                 "task1_subjects": [f"Test {i}" for i in range(1, 5)],
@@ -155,10 +158,10 @@ class WritingTestUI(QWidget):
                 content = f.read()
             return content.strip()
         except FileNotFoundError:
-            print(f"Writing content file not found: {filename}")
+            app_logger.debug(f"Writing content file not found: {filename}")
             return self.get_default_content(task_num)
         except Exception as e:
-            print(f"Error loading writing content: {str(e)}")
+            app_logger.debug(f"Error loading writing content: {str(e)}")
             return self.get_default_content(task_num)
 
     def get_default_content(self, task_num):

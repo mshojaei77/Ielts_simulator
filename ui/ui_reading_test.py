@@ -1,5 +1,8 @@
 import json
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import app_logger
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy)
@@ -22,6 +25,14 @@ class ReadingTestUI(QWidget):
         self.test_started = False
         self.completed_questions = 0
         self.total_questions = 40
+        # --- Added: tracker state for passages ---
+        self.passage_ranges = [(1, 13), (14, 26), (27, 40)]  # Typical IELTS Reading distribution
+        self.reading_answers_by_passage = {0: set(), 1: set(), 2: set()}
+        self.answer_poll_timer = QTimer(self)
+        self.answer_poll_timer.setInterval(200)
+        self.answer_poll_timer.timeout.connect(self.update_completion_count)
+        
+
         
         # Apply a clean, consistent style
         self.apply_ielts_style()
@@ -116,7 +127,7 @@ class ReadingTestUI(QWidget):
                 available_tests = ["Test 1", "Test 2", "Test 3", "Test 4"]
                 
         except Exception as e:
-            print(f"Error scanning reading directory: {e}")
+            app_logger.debug(f"Error scanning reading directory: {e}")
             available_tests = ["Test 1", "Test 2", "Test 3", "Test 4"]
         
         return {"reading_subjects": available_tests}
@@ -249,6 +260,8 @@ class ReadingTestUI(QWidget):
         # Set up web channel for JavaScript communication
         self.web_channel = QWebChannel()
         self.web_view.page().setWebChannel(self.web_channel)
+        # --- Added: refresh tracker after page loads ---
+        self.web_view.loadFinished.connect(self.on_page_loaded)
         
         test_content_layout.addWidget(self.web_view)
         
@@ -260,6 +273,9 @@ class ReadingTestUI(QWidget):
         self.content_stack.setCurrentWidget(self.protection_overlay)
         
         main_layout.addWidget(self.content_stack)
+
+        # --- Question Tracker UI ---
+        self.build_question_tracker(main_layout)
 
         # --- Bottom Navigation Bar ---
         nav_bar = QWidget()
@@ -424,8 +440,9 @@ class ReadingTestUI(QWidget):
 
     def start_actual_test(self):
         """Start the actual test from protection overlay"""
-        self.content_stack.setCurrentWidget(self.test_content_widget)
-        self.load_passage_content()
+        # Reuse the same logic as the top-bar "Start Test" button
+        # so the countdown timer and test state start immediately.
+        self.toggle_test()
 
     def switch_passage(self, index):
         """Switch between reading passages"""
@@ -441,9 +458,6 @@ class ReadingTestUI(QWidget):
         
         # Load the passage content
         self.load_passage_content()
-        
-        # Update completion count
-        self.update_completion_count()
 
     def go_back(self):
         """Navigate to previous passage"""
@@ -464,6 +478,12 @@ class ReadingTestUI(QWidget):
                                    QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.timer.stop()
+            # --- Added: stop live tracker polling ---
+            try:
+                if hasattr(self, 'answer_poll_timer'):
+                    self.answer_poll_timer.stop()
+            except Exception:
+                pass
             self.test_started = False
             self.start_test_button.setText("Start Test")
             self.start_test_button.setStyleSheet("""
@@ -481,56 +501,204 @@ class ReadingTestUI(QWidget):
             self.content_stack.setCurrentWidget(self.protection_overlay)
             QMessageBox.information(self, "Test Completed", "Your Reading test has been completed and submitted.")
 
-    def update_completion_count(self):
-        """Update the completion count based on filled answers"""
-        # This would be implemented with JavaScript communication
-        # For now, we'll use a placeholder
-        self.completion_label.setText(f"Completed: {self.completed_questions}/40")
+    def on_page_loaded(self, ok: bool):
+        """Called when the passage HTML finishes loading; refresh completion state and stretch content to the edges."""
+        try:
+            self.inject_full_width_styles()
+        except Exception as e:
+            app_logger.debug(f"Error injecting full-width styles: {e}")
+        try:
+            self.update_completion_count()
+        except Exception as e:
+            app_logger.debug(f"Error updating completion after page load: {e}")
 
-    def update_timer_display(self):
-        """Update the timer display"""
-        if self.time_remaining > 0:
-            self.time_remaining -= 1
-            minutes = self.time_remaining // 60
-            seconds = self.time_remaining % 60
-            time_display = f"{minutes:02d}:{seconds:02d}"
-            self.timer_label.setText(time_display)
+    def inject_full_width_styles(self):
+        """Inject CSS/JS into the loaded page to remove margins/padding and make content full-width."""
+        js = r"""
+        (function() {
+            try {
+                // Ensure a meta viewport exists for proper sizing
+                var meta = document.querySelector('meta[name=viewport]');
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
+                    document.head.appendChild(meta);
+                }
+                // Create style element
+                var style = document.createElement('style');
+                style.setAttribute('data-ielts-full-bleed', 'true');
+                style.textContent = `
+                    html, body { margin:0 !important; padding:0 !important; width:100% !important; height:100% !important; }
+                    body, body * { box-sizing: border-box; }
+                    .container, .content, .main, .wrapper, .page, .reading-container, .ielts-container, .root, .app, .layout {
+                        max-width: none !important; width: 100% !important; margin: 0 !important;
+                    }
+                `;
+                document.head.appendChild(style);
+                // Also adjust common wrappers directly under body
+                var selectors = ['body > div', 'body > main', 'body > section'];
+                selectors.forEach(function(sel){
+                    var nodes = document.querySelectorAll(sel);
+                    nodes.forEach(function(el){
+                        el.style.margin = '0';
+                        el.style.padding = '0';
+                        el.style.maxWidth = 'none';
+                        el.style.width = '100%';
+                    });
+                });
+                // Avoid horizontal scrollbars
+                document.documentElement.style.overflowX = 'hidden';
+                document.body.style.overflowX = 'hidden';
+                return true;
+            } catch (e) {
+                return e.message;
+            }
+        })();
+        """
+        try:
+            self.web_view.page().runJavaScript(js)
+        except Exception as e:
+            app_logger.debug(f"Error applying full-bleed styles: {e}")
+
+    def update_completion_count(self):
+        """Update completion count and question tracker for current section"""
+        if hasattr(self, 'web_view') and self.web_view.page():
+            # Execute JavaScript to count filled inputs and collect answered indices
+            js_code = r"""
+            (function() {
+                try {
+                    var inputs = document.querySelectorAll('input[type="text"], input:not([type]), input[type="search"], input[type="email"], input[type="number"], input[type="radio"], input[type="checkbox"], textarea, select, span[contenteditable="true"], div[contenteditable="true"]');
+                    var completed = 0;
+                    var total = inputs.length;
+                    var answered_indices = [];
+                    
+                    function isFilled(input) {
+                        var tag = (input.tagName || '').toLowerCase();
+                        var type = (input.type || '').toLowerCase();
+                        if (type === 'radio' || type === 'checkbox') return input.checked;
+                        if (tag === 'select') return input.value !== '' && input.value !== null;
+                        if (input.isContentEditable) {
+                            var txt = (input.innerText || input.textContent || '').toString();
+                            return txt.length > 0;
+                        }
+                        // Treat any character as answer, including whitespace
+                        return (input.value !== undefined && input.value !== null && String(input.value).length > 0);
+                    }
+                    
+                    function numFrom(input) {
+                        // Try data-question attribute first
+                        var dataQ = input.getAttribute('data-question');
+                        if (dataQ) {
+                            var match = dataQ.match(/(\d{1,2})/);
+                            if (match) return parseInt(match[1]);
+                        }
+                        
+                        // Try name attribute
+                        var name = input.getAttribute('name');
+                        if (name) {
+                            var match = name.match(/q(\d{1,2})/i);
+                            if (match) return parseInt(match[1]);
+                            match = name.match(/(\d{1,2})/);
+                            if (match) return parseInt(match[1]);
+                        }
+                        
+                        // Try id attribute
+                        var id = input.getAttribute('id');
+                        if (id) {
+                            var match = id.match(/q(\d{1,2})/i);
+                            if (match) return parseInt(match[1]);
+                            match = id.match(/(\d{1,2})/);
+                            if (match) return parseInt(match[1]);
+                        }
+                        
+                        // Look up the nearest label containing a number
+                        var label = input.closest('label');
+                        if (label) {
+                            var t = label.textContent || '';
+                            var match = t.match(/(\d{1,2})/);
+                            if (match) return parseInt(match[1]);
+                        }
+                        
+                        return null;
+                    }
+                    
+                    inputs.forEach(function(input) {
+                        var questionNum = numFrom(input);
+                        var filled = isFilled(input);
+                        
+                        if (filled && questionNum >= 1 && questionNum <= 40) {
+                            completed++;
+                            answered_indices.push(questionNum);
+                        }
+                    });
+                    
+                    return {
+                        completed: completed, 
+                        total: inputs.length, 
+                        answered_indices: answered_indices, 
+                        success: true
+                    };
+                } catch (error) {
+                    return {
+                        completed: 0, 
+                        total: 0, 
+                        answered_indices: [], 
+                        success: false, 
+                        error: error.message
+                    };
+                }
+            })();
+            """
             
-            # Warning colors at different thresholds
-            if self.time_remaining <= 300:  # 5 minutes left
-                self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red; background-color: #f0f0f0; padding: 0 10px;")
-            elif self.time_remaining <= 600:  # 10 minutes left
-                self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: orange; background-color: #f0f0f0; padding: 0 10px;")
-                
-            # Show warning at specific times
-            if self.time_remaining == 600:  # 10 minutes left
-                QMessageBox.warning(self, "Time Alert", "10 minutes remaining for the Reading test.")
-            elif self.time_remaining == 300:  # 5 minutes left
-                QMessageBox.warning(self, "Time Alert", "5 minutes remaining for the Reading test.")
+            def handle_result(result):
+                try:
+                    if result and isinstance(result, dict) and result.get('success', False):
+                        answered = result.get('answered_indices', [])
+                        
+                        # Filter to current passage range and persist
+                        start, end = self.passage_ranges[self.current_passage]
+                        current_set = {q for q in answered if start <= q <= end}
+                        self.reading_answers_by_passage[self.current_passage] = current_set
+                        
+                        # Union across passages
+                        union_set = set().union(*self.reading_answers_by_passage.values())
+                        self.completed_questions = len(union_set)
+                        self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
+                        
+                        # Refresh tracker with all answered questions
+                        self.refresh_question_tracker(list(union_set))
+                    else:
+                        error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                        app_logger.debug(f"JavaScript execution error: {error_msg}")
+                        # Fallback: preserve previous count
+                        union_set = set().union(*self.reading_answers_by_passage.values())
+                        self.completed_questions = len(union_set)
+                        self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
+                        self.refresh_question_tracker(list(union_set))
+                except Exception as e:
+                    app_logger.debug(f"Error handling JavaScript result: {e}")
+                    # Fallback: preserve previous count
+                    union_set = set().union(*self.reading_answers_by_passage.values())
+                    self.completed_questions = len(union_set)
+                    self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
+                    self.refresh_question_tracker(list(union_set))
+            
+            try:
+                self.web_view.page().runJavaScript(js_code, handle_result)
+            except Exception as e:
+                # Fallback if JavaScript execution fails
+                app_logger.debug(f"Failed to execute JavaScript: {e}")
+                union_set = set().union(*self.reading_answers_by_passage.values())
+                self.completed_questions = len(union_set)
+                self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
+                self.refresh_question_tracker(list(union_set))
         else:
-            self.timer.stop()
-            self.timer_label.setText("00:00")
-            self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red; background-color: #f0f0f0; padding: 0 10px;")
-            
-            # Alert user
-            QMessageBox.critical(self, "Time's Up", "Your Reading test time has ended. Your responses have been saved.")
-            
-            # Reset test state
-            self.test_started = False
-            self.start_test_button.setText("Start Test")
-            self.start_test_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    font-weight: bold;
-                    border: 1px solid #45a049;
-                    padding: 8px 16px;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            self.content_stack.setCurrentWidget(self.protection_overlay)
+            # Fallback if page not ready
+            union_set = set().union(*self.reading_answers_by_passage.values())
+            self.completed_questions = len(union_set)
+            self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
+            self.refresh_question_tracker(list(union_set))
 
     def toggle_test(self):
         """Start or stop the test"""
@@ -561,6 +729,11 @@ class ReadingTestUI(QWidget):
             if self.content_stack.currentWidget() == self.protection_overlay:
                 self.content_stack.setCurrentWidget(self.test_content_widget)
                 self.load_passage_content()
+            # --- Added: start live completion polling ---
+            try:
+                self.answer_poll_timer.start()
+            except Exception:
+                pass
         else:
             # End the test
             self.finish_test()
@@ -730,3 +903,181 @@ class ReadingTestUI(QWidget):
         """
         
         QMessageBox.information(self, "Help", help_text)
+
+    def build_question_tracker(self, main_layout):
+        """Create the bottom question tracker UI with 40 buttons grouped by passage."""
+        self.question_buttons = {}
+        tracker = QWidget()
+        tracker.setObjectName("question_tracker")
+        layout = QHBoxLayout(tracker)
+        layout.setContentsMargins(15, 5, 15, 5)
+        layout.setSpacing(12)
+        
+        for p_idx in range(3):
+            part_widget = QWidget()
+            part_layout = QHBoxLayout(part_widget)
+            part_layout.setContentsMargins(0, 0, 0, 0)
+            part_layout.setSpacing(6)
+            
+            part_label = QLabel(f"Passage {p_idx + 1}")
+            part_label.setObjectName("part_label")
+            part_layout.addWidget(part_label)
+            
+            numbers_container = QWidget()
+            nums_layout = QHBoxLayout(numbers_container)
+            nums_layout.setContentsMargins(6, 0, 0, 0)
+            nums_layout.setSpacing(4)
+            
+            start, end = self.passage_ranges[p_idx]
+            for q in range(start, end + 1):
+                btn = QPushButton(f"{q:02d}")
+                btn.setObjectName("question_cell")
+                btn.setFixedSize(32, 24)
+                btn.clicked.connect(lambda checked, num=q: self.on_question_cell_clicked(num))
+                self.question_buttons[q] = btn
+                nums_layout.addWidget(btn)
+            
+            part_layout.addWidget(numbers_container)
+            layout.addWidget(part_widget)
+        
+        tracker.setStyleSheet(
+            """
+            QWidget#question_tracker { background-color: #ffffff; border-top: 1px solid #dee2e6; }
+            QLabel#part_label { color: #6c757d; font-size: 11px; font-style: italic; min-width: 70px; }
+            QPushButton#question_cell { background-color: #000000; color: #ffffff; border: 1px solid #333333; padding: 2px; border-radius: 2px; min-width: 28px; min-height: 20px; }
+            QPushButton#question_cell[answered="true"] { background-color: #007bff; border-color: #0056b3; }
+            QPushButton#question_cell:disabled { background-color: #222222; color: #777777; border-color: #444444; }
+            """
+        )
+        
+        main_layout.addWidget(tracker)
+        # Initialize all cells to black (unanswered)
+        self.refresh_question_tracker([])
+
+    def refresh_question_tracker(self, answered_global_numbers):
+        """Refresh the tracker buttons based on the union of answered question numbers."""
+        if not hasattr(self, 'question_buttons') or not self.question_buttons:
+            return
+        
+        union_set = set(answered_global_numbers or [])
+        if not union_set:
+            union_set = set().union(*self.reading_answers_by_passage.values())
+        
+        for q in range(1, 41):
+            btn = self.question_buttons.get(q)
+            if not btn:
+                continue
+            btn.setProperty('answered', q in union_set)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
+
+    def on_question_cell_clicked(self, qnum: int):
+        """Navigate to the passage containing qnum, then scroll to the matching input."""
+        target_idx = None
+        for idx, (s, e) in enumerate(self.passage_ranges):
+            if s <= qnum <= e:
+                target_idx = idx
+                break
+        if target_idx is None:
+            return
+        
+        if target_idx != self.current_passage:
+            self.switch_passage(target_idx)
+            QTimer.singleShot(600, lambda: self.scroll_to_question(qnum))
+        else:
+            self.scroll_to_question(qnum)
+
+    def scroll_to_question(self, qnum: int):
+        """Scroll the web page to the element corresponding to qnum."""
+        js = f"""
+        (function(q) {{
+            try {{
+                var selectors = [
+                    '[data-question="' + q + '"]',
+                    '[name*="q' + q + '"]',
+                    '[name="' + q + '"]',
+                    '#q' + q,
+                    '[id*="q' + q + '"]'
+                ];
+                var el = null;
+                for (var i = 0; i < selectors.length; i++) {{
+                    el = document.querySelector(selectors[i]);
+                    if (el) break;
+                }}
+                if (!el) {{
+                    var candidates = Array.from(document.querySelectorAll('label, p, span, h1, h2, h3, h4'));
+                    for (var j = 0; j < candidates.length; j++) {{
+                        var t = candidates[j].textContent || '';
+                        if (t.match(new RegExp('\\b' + q + '\\b'))) {{
+                            el = candidates[j];
+                            break;
+                        }}
+                    }}
+                }}
+                if (el) {{
+                    el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                    if (el.focus) el.focus();
+                    return {{ success: true }};
+                }} else {{
+                    return {{ success: false, error: 'Question not found' }};
+                }}
+            }} catch (e) {{
+                return {{ success: false, error: e.message }};
+            }}
+        }}))({qnum});
+        """
+        try:
+            self.web_view.page().runJavaScript(js)
+        except Exception as e:
+            app_logger.debug(f"Error scrolling to question {qnum}: {e}")
+
+    def update_timer_display(self):
+        """Update the timer display and handle end-of-test logic."""
+        if self.time_remaining > 0:
+            self.time_remaining -= 1
+            minutes = self.time_remaining // 60
+            seconds = self.time_remaining % 60
+            time_display = f"{minutes:02d}:{seconds:02d}"
+            self.timer_label.setText(time_display)
+            
+            # Warning colors at different thresholds
+            if self.time_remaining <= 300:  # 5 minutes left
+                self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red; background-color: #f0f0f0; padding: 0 10px;")
+            elif self.time_remaining <= 600:  # 10 minutes left
+                self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: orange; background-color: #f0f0f0; padding: 0 10px;")
+                
+            # Show warning at specific times
+            if self.time_remaining == 600:  # 10 minutes left
+                QMessageBox.warning(self, "Time Alert", "10 minutes remaining for the Reading test.")
+            elif self.time_remaining == 300:  # 5 minutes left
+                QMessageBox.warning(self, "Time Alert", "5 minutes remaining for the Reading test.")
+        else:
+            self.timer.stop()
+            try:
+                if hasattr(self, 'answer_poll_timer'):
+                    self.answer_poll_timer.stop()
+            except Exception:
+                pass
+            self.timer_label.setText("00:00")
+            self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red; background-color: #f0f0f0; padding: 0 10px;")
+            
+            # Alert user
+            QMessageBox.critical(self, "Time's Up", "Your Reading test time has ended. Your responses have been saved.")
+            
+            # Reset test state
+            self.test_started = False
+            self.start_test_button.setText("Start Test")
+            self.start_test_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    font-weight: bold;
+                    border: 1px solid #45a049;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            self.content_stack.setCurrentWidget(self.protection_overlay)

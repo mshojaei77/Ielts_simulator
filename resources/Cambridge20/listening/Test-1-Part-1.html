@@ -1,18 +1,52 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>IELTS Listening Test 1 - Section 1</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS Listening Test 1 - Section 1</title>
+    <link rel="stylesheet" href="listening.css">
 </head>
 <body>
-<h1>IELTS Listening Test 1 - Section 1</h1>
-<h2>Questions 1-10</h2>
-<p>Complete the table below. Write NO MORE THAN TWO WORDS AND/OR A NUMBER for each answer.</p>
-<table border="1">
-<tr><th>Name</th><th>Location</th><th>Reason</th><th>Comments</th></tr>
-<tr><td>The Junction</td><td>Greyson Street</td><td>Good for <input id="q1"> The <input id="q2"> is good for drinks</td><td>Expensive</td></tr>
-<tr><td>Paloma</td><td>Bow Street</td><td><input id="q3"> food</td><td>Friendly staff, £50 deposit, limited <input id="q4"> food</td></tr>
-<tr><td>The <input id="q5"></td><td>Top of <input id="q6"></td><td>Famous chef, good <input id="q7"></td><td>£<input id="q8"> lunch, <input id="q9"> ingredients, <input id="q10"> size portions</td></tr>
-</table>
+    <div class="test-container">
+        <h1>IELTS Listening Test 1 - Section 1</h1>
+        
+        <div class="question-group">
+            <h2>Questions 1-10</h2>
+            <div class="instructions">
+                <p><strong>Complete the table below. Write NO MORE THAN TWO WORDS AND/OR A NUMBER for each answer.</strong></p>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Reason</th>
+                        <th>Comments</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>The Junction</td>
+                        <td>Greyson Street</td>
+                        <td>Good for <input type="text" id="q1" class="answer-blank" data-question="1" placeholder="1"> The <input type="text" id="q2" class="answer-blank" data-question="2" placeholder="2"> is good for drinks</td>
+                        <td>Expensive</td>
+                    </tr>
+                    <tr>
+                        <td>Paloma</td>
+                        <td>Bow Street</td>
+                        <td><input type="text" id="q3" class="answer-blank" data-question="3" placeholder="3"> food</td>
+                        <td>Friendly staff, £50 deposit, limited <input type="text" id="q4" class="answer-blank" data-question="4" placeholder="4"> food</td>
+                    </tr>
+                    <tr>
+                        <td>The <input type="text" id="q5" class="answer-blank" data-question="5" placeholder="5"></td>
+                        <td>Top of <input type="text" id="q6" class="answer-blank" data-question="6" placeholder="6"></td>
+                        <td>Famous chef, good <input type="text" id="q7" class="answer-blank" data-question="7" placeholder="7"></td>
+                        <td>£<input type="text" id="q8" class="answer-blank" data-question="8" placeholder="8"> lunch, <input type="text" id="q9" class="answer-blank" data-question="9" placeholder="9"> ingredients, <input type="text" id="q10" class="answer-blank" data-question="10" placeholder="10"> size portions</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </body>
 </html>

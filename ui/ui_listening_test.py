@@ -1,6 +1,9 @@
 import json
 import os
 from datetime import datetime
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import app_logger
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -70,12 +73,7 @@ class ListeningTestUI(QWidget):
                 padding: 8px 15px;
             }
             
-            /* Section tabs at bottom */
-            #section_tabs {
-                background-color: #f8f9fa;
-                border-top: 1px solid #dee2e6;
-                padding: 5px 15px;
-            }
+
             
             /* Navigation area */
             #navigation_area {
@@ -118,27 +116,7 @@ class ListeningTestUI(QWidget):
                 background-color: #6c757d;
                 border-color: #6c757d;
                 color: #ffffff;
-            }
-            
-            /* Section tab buttons */
-            QPushButton.section_tab {
-                background-color: #e9ecef;
-                border: 1px solid #ced4da;
-                padding: 8px 16px;
-                margin-right: 2px;
-                border-radius: 3px 3px 0 0;
-            }
-            QPushButton.section_tab:checked {
-                background-color: #007bff;
-                color: white;
-                border-color: #007bff;
-            }
-            QPushButton.section_tab:disabled {
-                background-color: #f8f9fa;
-                color: #6c757d;
-                border-color: #dee2e6;
-            }
-            
+            }  
             /* Start test button */
             QPushButton#start_test_button {
                 background-color: #007bff;
@@ -171,13 +149,7 @@ class ListeningTestUI(QWidget):
                 font-weight: bold;
             }
             
-            /* Completion counter */
-            QLabel#completion_label {
-                font-size: 11px;
-                color: #6c757d;
-                font-style: italic;
-                background-color: #f8f9fa;
-            }
+
             
             /* Combo boxes */
             QComboBox {
@@ -283,37 +255,10 @@ class ListeningTestUI(QWidget):
         
         main_layout.addWidget(self.content_stack, 1)  # Stretch factor 1 = takes all remaining space
 
-        # === BOTTOM SECTION TABS ===
-        section_tabs_widget = QWidget()
-        section_tabs_widget.setObjectName("section_tabs")
-        section_tabs_widget.setFixedHeight(40)
-        section_tabs_layout = QHBoxLayout(section_tabs_widget)
-        section_tabs_layout.setContentsMargins(15, 5, 15, 5)
+
         
-        # Section navigation tabs
-        self.section_tabs = []
-        for i in range(4):
-            tab = QPushButton(f"Section {i+1}")
-            tab.setObjectName("section_tab")
-            tab.setProperty("class", "section_tab")
-            tab.setCheckable(True)
-            tab.setEnabled(False)  # Initially disabled
-            tab.clicked.connect(lambda checked, idx=i: self.switch_section(idx))
-            self.section_tabs.append(tab)
-            section_tabs_layout.addWidget(tab)
-        
-        # Enable first section
-        self.section_tabs[0].setChecked(True)
-        self.section_tabs[0].setEnabled(True)
-        
-        section_tabs_layout.addStretch()
-        
-        # Completion counter
-        self.completion_label = QLabel("Completed: 0/40 questions")
-        self.completion_label.setObjectName("completion_label")
-        section_tabs_layout.addWidget(self.completion_label)
-        
-        main_layout.addWidget(section_tabs_widget)
+        # === QUESTION TRACKER (All 40) ===
+        self.build_question_tracker(main_layout)
 
         # === NAVIGATION AREA ===
         navigation_widget = QWidget()
@@ -504,10 +449,10 @@ class ListeningTestUI(QWidget):
         try:
             subjects_file = os.path.join(os.path.dirname(__file__), '..', 'resources', 'subjects.json')
             if os.path.exists(subjects_file):
-                with open(subjects_file, 'r') as f:
+                with open(subjects_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
-            print(f"Error loading subjects: {e}")
+            app_logger.debug(f"Error loading subjects: {e}")
         
         # Return default structure if file doesn't exist
         return {
@@ -543,22 +488,27 @@ class ListeningTestUI(QWidget):
             self.load_html_for_section(0)
             # Load audio for first section
             self.load_audio_for_section(0)
-            # Reset section tabs
-            for i, tab in enumerate(self.section_tabs):
-                tab.setEnabled(i == 0)  # Only enable first section initially
-                tab.setChecked(i == 0)
+
             self.current_section = 0
 
     def load_html_for_section(self, section_index):
         """Load HTML file for specific section"""
         try:
+            # Validate section index
+            if not (0 <= section_index <= 3):
+                raise ValueError(f"Invalid section index: {section_index}. Must be 0-3.")
+            
             # Get current test selection
             current_test = self.test_combo.currentText()
-            if not current_test:
-                return
+            current_book = self.book_combo.currentText()
+            if not current_test or not current_book:
+                raise ValueError("No test or book selected")
             
             # Extract test number (e.g., "Test 1" -> "1")
             test_number = current_test.split()[-1]
+            
+            # Convert book name to folder name (e.g., "Cambridge 20" -> "Cambridge20")
+            book_folder = current_book.replace(" ", "")
             
             # Construct HTML file path
             html_file = f"Test-{test_number}-Part-{section_index + 1}.html"
@@ -566,55 +516,98 @@ class ListeningTestUI(QWidget):
                 os.path.dirname(__file__), 
                 '..', 
                 'resources', 
-                'Cambridge20', 
+                book_folder, 
                 'listening', 
                 html_file
             )
             
-            if os.path.exists(html_path):
-                # Load HTML file into web view
-                file_url = QUrl.fromLocalFile(os.path.abspath(html_path))
-                self.web_view.load(file_url)
-                print(f"Loaded HTML: {html_path}")
-            else:
-                print(f"HTML file not found: {html_path}")
-                # Load default content
-                self.web_view.setHtml(f"""
-                <html>
-                <head>
-                    <title>IELTS Listening Test</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; padding: 20px; }}
-                        .header {{ background: #4285F4; color: white; padding: 15px; margin-bottom: 20px; }}
-                        .section {{ margin-bottom: 20px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h2>IELTS Listening</h2>
-                        <p>{current_test} - Section {section_index + 1} Questions {section_index * 10 + 1}-{(section_index + 1) * 10}</p>
-                    </div>
-                    <div class="section">
-                        <h3>Section {section_index + 1}</h3>
-                        <p>Questions {section_index * 10 + 1}-{(section_index + 1) * 10}</p>
-                        <p>HTML content for this section will be loaded here.</p>
-                    </div>
-                </body>
-                </html>
-                """)
+            # Validate file exists and is readable
+            if not os.path.exists(html_path):
+                raise FileNotFoundError(f"HTML file not found: {html_path}")
+            
+            if not os.path.isfile(html_path):
+                raise ValueError(f"Path is not a file: {html_path}")
+            
+            # Check file size (prevent loading extremely large files)
+            file_size = os.path.getsize(html_path)
+            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                raise ValueError(f"HTML file too large: {file_size} bytes")
+            
+            # Load HTML file into web view
+            file_url = QUrl.fromLocalFile(os.path.abspath(html_path))
+            self.web_view.load(file_url)
+            app_logger.debug(f"Loaded HTML: {html_path}")
+            
+        except (FileNotFoundError, ValueError, OSError) as e:
+            app_logger.debug(f"Error loading HTML for section {section_index + 1}: {e}")
+            # Show user-friendly error in web view
+            fallback_html = f"""
+            <html>
+            <head>
+                <title>IELTS Listening Test - Section {section_index + 1}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5; }}
+                    .header {{ background: #4285F4; color: white; padding: 15px; margin-bottom: 20px; border-radius: 5px; }}
+                    .error {{ color: #d32f2f; background-color: #ffebee; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+                    .section {{ margin-bottom: 20px; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2>IELTS Listening</h2>
+                    <p>Section {section_index + 1} - Questions {section_index * 10 + 1}-{(section_index + 1) * 10}</p>
+                </div>
+                <div class="error">
+                    <strong>Content not available</strong><br>
+                    The content for this section could not be loaded. Please check that the test files are properly installed.
+                </div>
+                <div class="section">
+                    <h3>Section {section_index + 1}</h3>
+                    <p>Questions {section_index * 10 + 1}-{(section_index + 1) * 10}</p>
+                    <p>Please ensure the HTML files are available in the resources directory.</p>
+                </div>
+            </body>
+            </html>
+            """
+            self.web_view.setHtml(fallback_html)
         except Exception as e:
-            print(f"Error loading HTML for section {section_index}: {e}")
+            app_logger.debug(f"Unexpected error loading HTML for section {section_index + 1}: {e}")
+            # Show generic error in web view
+            error_html = f"""
+            <html>
+            <head>
+                <title>Error - Section {section_index + 1}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; padding: 20px; }}
+                    .error {{ color: red; background-color: #ffe6e6; padding: 15px; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <h2>Error Loading Section {section_index + 1}</h2>
+                <div class="error">An unexpected error occurred while loading the section content.</div>
+            </body>
+            </html>
+            """
+            self.web_view.setHtml(error_html)
 
     def load_audio_for_section(self, section_index):
         """Load audio file for specific section"""
         try:
+            # Validate section index
+            if not (0 <= section_index <= 3):
+                raise ValueError(f"Invalid section index: {section_index}. Must be 0-3.")
+            
             # Get current test selection
             current_test = self.test_combo.currentText()
-            if not current_test:
-                return
+            current_book = self.book_combo.currentText()
+            if not current_test or not current_book:
+                raise ValueError("No test or book selected")
             
             # Extract test number (e.g., "Test 1" -> "1")
             test_number = current_test.split()[-1]
+            
+            # Convert book name to folder name (e.g., "Cambridge 20" -> "Cambridge20")
+            book_folder = current_book.replace(" ", "")
             
             # Construct audio file path based on actual file structure
             audio_file = f"Test-{test_number}-Part-{section_index + 1}.mp3"
@@ -622,22 +615,45 @@ class ListeningTestUI(QWidget):
                 os.path.dirname(__file__), 
                 '..', 
                 'resources', 
-                'Cambridge20', 
+                book_folder, 
                 'listening', 
                 audio_file
             )
             
-            if os.path.exists(audio_path):
-                # Set up media player
-                media_content = QMediaContent(QUrl.fromLocalFile(os.path.abspath(audio_path)))
-                self.media_player.setMedia(media_content)
-                self.current_audio_file = audio_path
-                print(f"Loaded audio: {audio_path}")
-            else:
-                print(f"Audio file not found: {audio_path}")
+            # Validate file exists and is readable
+            if not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            
+            if not os.path.isfile(audio_path):
+                raise ValueError(f"Path is not a file: {audio_path}")
+            
+            # Check file size (prevent loading extremely large files)
+            file_size = os.path.getsize(audio_path)
+            if file_size == 0:
+                raise ValueError(f"Audio file is empty: {audio_path}")
+            
+            if file_size > 100 * 1024 * 1024:  # 100MB limit for audio
+                raise ValueError(f"Audio file too large: {file_size} bytes")
+            
+            # Validate file extension
+            if not audio_path.lower().endswith(('.mp3', '.wav', '.m4a', '.ogg')):
+                raise ValueError(f"Unsupported audio format: {audio_path}")
+            
+            # Set up media player
+            media_content = QMediaContent(QUrl.fromLocalFile(os.path.abspath(audio_path)))
+            self.media_player.setMedia(media_content)
+            self.current_audio_file = audio_path
+            app_logger.debug(f"Loaded audio: {audio_path}")
                 
+        except (FileNotFoundError, ValueError, OSError) as e:
+            app_logger.debug(f"Error loading audio for section {section_index + 1}: {e}")
+            # Clear any existing media to prevent playing wrong audio
+            self.media_player.setMedia(QMediaContent())
+            
         except Exception as e:
-            print(f"Error loading audio for section {section_index}: {e}")
+            app_logger.debug(f"Unexpected error loading audio for section {section_index + 1}: {e}")
+            # Clear any existing media to prevent playing wrong audio
+            self.media_player.setMedia(QMediaContent())
 
     def switch_section(self, index):
         """Switch to a different section"""
@@ -647,9 +663,7 @@ class ListeningTestUI(QWidget):
         # Update current section
         self.current_section = index
         
-        # Update section tab states
-        for i, tab in enumerate(self.section_tabs):
-            tab.setChecked(i == index)
+
         
         # Load HTML and audio for the section
         self.load_html_for_section(index)
@@ -675,8 +689,52 @@ class ListeningTestUI(QWidget):
 
     def update_navigation_buttons(self):
         """Update the state of navigation buttons"""
-        self.back_button.setEnabled(self.current_section > 0)
-        self.next_button.setEnabled(self.current_section < 3)
+        try:
+            # Validate current_section exists and is valid
+            if not hasattr(self, 'current_section'):
+                self.current_section = 0
+            
+            # Ensure current_section is within valid range
+            if not (0 <= self.current_section <= 3):
+                app_logger.debug(f"Warning: Invalid current_section value: {self.current_section}. Resetting to 0.")
+                self.current_section = 0
+            
+            # Check if buttons exist before updating them
+            if hasattr(self, 'back_button') and self.back_button is not None:
+                # Enable back button only if not on first section
+                self.back_button.setEnabled(self.current_section > 0)
+                
+                # Update button text to be more descriptive
+                if self.current_section > 0:
+                    self.back_button.setToolTip(f"Go to Section {self.current_section}")
+                else:
+                    self.back_button.setToolTip("No previous section")
+            else:
+                app_logger.debug("Warning: back_button not found or is None")
+            
+            if hasattr(self, 'next_button') and self.next_button is not None:
+                # Enable next button only if not on last section
+                self.next_button.setEnabled(self.current_section < 3)
+                
+                # Update button text to be more descriptive
+                if self.current_section < 3:
+                    self.next_button.setToolTip(f"Go to Section {self.current_section + 2}")
+                else:
+                    self.next_button.setToolTip("No next section")
+            else:
+                app_logger.debug("Warning: next_button not found or is None")
+                
+            # Update section indicator if it exists
+            if hasattr(self, 'section_label') and self.section_label is not None:
+                self.section_label.setText(f"Section {self.current_section + 1} of 4")
+                
+        except Exception as e:
+            app_logger.debug(f"Error updating navigation buttons: {e}")
+            # Fallback: disable both buttons to prevent crashes
+            if hasattr(self, 'back_button') and self.back_button is not None:
+                self.back_button.setEnabled(False)
+            if hasattr(self, 'next_button') and self.next_button is not None:
+                self.next_button.setEnabled(False)
 
 
 
@@ -712,27 +770,33 @@ class ListeningTestUI(QWidget):
             
             # Create temporary WAV file
             temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-            with wave.open(temp_file.name, 'wb') as wav_file:
+            temp_file_path = temp_file.name
+            temp_file.close()  # Close file handle before writing with wave
+            
+            with wave.open(temp_file_path, 'wb') as wav_file:
                 wav_file.setnchannels(1)  # Mono
                 wav_file.setsampwidth(2)  # 2 bytes per sample
                 wav_file.setframerate(sample_rate)
                 wav_file.writeframes(b''.join(audio_data))
             
             # Play the test audio
-            test_url = QUrl.fromLocalFile(temp_file.name)
+            test_url = QUrl.fromLocalFile(temp_file_path)
             self.media_player.setMedia(QMediaContent(test_url))
             self.media_player.play()
+            
+            # Store temp file path for cleanup
+            self.temp_audio_file = temp_file_path
             
             # Update status
             self.audio_status_label.setText("🔊 Playing test audio...")
             self.audio_test_button.setText("Playing...")
             self.audio_test_button.setEnabled(False)
             
-            # Re-enable button after 2 seconds
-            QTimer.singleShot(2000, self.reset_audio_test_button)
+            # Re-enable button and cleanup after 3 seconds
+            QTimer.singleShot(3000, self.reset_audio_test_button)
             
         except Exception as e:
-            print(f"Error playing audio test: {e}")
+            app_logger.debug(f"Error playing audio test: {e}")
             self.audio_status_label.setText("❌ Audio test failed")
     
     def reset_audio_test_button(self):
@@ -740,6 +804,16 @@ class ListeningTestUI(QWidget):
         self.audio_test_button.setText("🔊 Test Audio")
         self.audio_test_button.setEnabled(True)
         self.audio_status_label.setText("✅ Audio test completed")
+        
+        # Clean up temporary audio file
+        if hasattr(self, 'temp_audio_file'):
+            try:
+                import os
+                if os.path.exists(self.temp_audio_file):
+                    os.unlink(self.temp_audio_file)
+                delattr(self, 'temp_audio_file')
+            except Exception as e:
+                app_logger.debug(f"Error cleaning up temp audio file: {e}")
     
     def start_actual_test(self):
         """Start the actual test by hiding overlay and showing web view"""
@@ -748,6 +822,8 @@ class ListeningTestUI(QWidget):
         
         # Start the timer
         if not self.test_started:
+            # Reset timer to full duration
+            self.time_remaining = self.total_time
             self.test_started = True
             self.timer.start(1000)  # Update every second
             self.start_test_button.setText("End Test")
@@ -764,9 +840,7 @@ class ListeningTestUI(QWidget):
                 }
             """)
             
-            # Enable section tabs
-            for tab in self.section_tabs:
-                tab.setEnabled(True)
+
             
             # Load the first test
             self.load_selected_test()
@@ -798,14 +872,7 @@ class ListeningTestUI(QWidget):
                 # Show protection overlay again
                 self.content_stack.setCurrentWidget(self.protection_overlay)
                 
-                # Reset section tabs
-                for i, tab in enumerate(self.section_tabs):
-                    if i == 0:
-                        tab.setEnabled(True)
-                        tab.setChecked(True)
-                    else:
-                        tab.setEnabled(False)
-                        tab.setChecked(False)
+
                 
                 self.show_test_summary()
         else:
@@ -831,94 +898,256 @@ class ListeningTestUI(QWidget):
             self.show_test_summary()
 
     def update_completion_count(self):
-        """Update completion count with real-time JavaScript integration"""
+        """Update completion count and question tracker for current section"""
         if hasattr(self, 'web_view') and self.web_view.page():
-            # Execute JavaScript to count filled inputs
+            # Execute JavaScript to count filled inputs and collect answered indices
             js_code = """
             (function() {
-                var inputs = document.querySelectorAll('.answer-blank');
-                var completed = 0;
-                var total = inputs.length;
-                
-                inputs.forEach(function(input) {
-                    if (input.value && input.value.trim() !== '') {
-                        completed++;
-                    }
-                });
-                
-                return {completed: completed, total: total};
+                try {
+                    var inputs = document.querySelectorAll('.answer-blank');
+                    var completed = 0;
+                    var total = inputs.length;
+                    var answered_indices = [];
+                    
+                    inputs.forEach(function(input, idx) {
+                        if (input.value && input.value.trim() !== '') {
+                            completed++;
+                            answered_indices.push(idx);
+                        }
+                    });
+                    
+                    return {completed: completed, total: total, answered_indices: answered_indices, success: true};
+                } catch (error) {
+                    return {completed: 0, total: 10, answered_indices: [], success: false, error: error.message};
+                }
             })();
             """
             
             def handle_result(result):
-                if result and isinstance(result, dict):
-                    completed = result.get('completed', 0)
-                    total = result.get('total', 10)  # Default to 10 for each section
-                    # Calculate total across all sections (40 questions total)
-                    section_completed = completed
-                    total_questions = 40
-                    self.completion_label.setText(f"Completed: {section_completed}/{total} questions (Section {self.current_section + 1})")
-                else:
-                    self.completion_label.setText(f"Completed: 0/10 questions (Section {self.current_section + 1})")
+                try:
+                    if result and isinstance(result, dict) and result.get('success', False):
+                        answered = result.get('answered_indices', [])
+                        self.refresh_question_tracker(answered)
+                    else:
+                        error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                        app_logger.debug(f"JavaScript execution error: {error_msg}")
+                        self.refresh_question_tracker([])
+                except Exception as e:
+                    app_logger.debug(f"Error handling JavaScript result: {e}")
+                    self.refresh_question_tracker([])
             
             try:
                 self.web_view.page().runJavaScript(js_code, handle_result)
-            except:
+            except Exception as e:
                 # Fallback if JavaScript execution fails
-                self.completion_label.setText(f"Completed: 0/10 questions (Section {self.current_section + 1})")
+                app_logger.debug(f"Failed to execute JavaScript: {e}")
+                self.refresh_question_tracker([])
+    
+    def build_question_tracker(self, main_layout):
+        """Create the bottom question tracker UI with 40 buttons grouped by part."""
+        self.question_buttons = {}
+        tracker = QWidget()
+        tracker.setObjectName("question_tracker")
+        layout = QHBoxLayout(tracker)
+        layout.setContentsMargins(15, 5, 15, 5)
+        layout.setSpacing(12)
+        
+        for part in range(4):
+            part_widget = QWidget()
+            part_layout = QHBoxLayout(part_widget)
+            part_layout.setContentsMargins(0, 0, 0, 0)
+            part_layout.setSpacing(6)
+            
+            part_label = QLabel(f"Part {part + 1}")
+            part_label.setObjectName("part_label")
+            part_layout.addWidget(part_label)
+            
+            numbers_container = QWidget()
+            nums_layout = QHBoxLayout(numbers_container)
+            nums_layout.setContentsMargins(6, 0, 0, 0)
+            nums_layout.setSpacing(4)
+            
+            start = part * 10 + 1
+            for q in range(start, start + 10):
+                btn = QPushButton(f"{q:02d}")
+                btn.setObjectName("question_cell")
+                btn.setFixedSize(32, 24)
+                btn.clicked.connect(lambda checked, num=q: self.on_question_cell_clicked(num))
+                self.question_buttons[q] = btn
+                nums_layout.addWidget(btn)
+            
+            part_layout.addWidget(numbers_container)
+            layout.addWidget(part_widget)
+        
+        # Style just the tracker area
+        tracker.setStyleSheet("""
+            QWidget#question_tracker { background-color: #ffffff; border-top: 1px solid #dee2e6; }
+            QLabel#part_label { color: #6c757d; font-size: 11px; font-style: italic; min-width: 50px; }
+            QPushButton#question_cell { background-color: #000000; color: #ffffff; border: 1px solid #333333; padding: 2px; border-radius: 2px; min-width: 28px; min-height: 20px; }
+            QPushButton#question_cell[answered="true"] { background-color: #007bff; border-color: #0056b3; }
+            QPushButton#question_cell:disabled { background-color: #222222; color: #777777; border-color: #444444; }
+        """)
+        
+        # Add to layout and initialize state
+        main_layout.addWidget(tracker)
+        self.refresh_question_tracker([])
+    
+    def refresh_question_tracker(self, answered_indices):
+        """Refresh the question tracker button states using answered indices for the current section."""
+        if not hasattr(self, 'question_buttons') or not self.question_buttons:
+            return
+        
+        start = self.current_section * 10 + 1
+        end = start + 9
+        
+        for q in range(1, 41):
+            btn = self.question_buttons.get(q)
+            if not btn:
+                continue
+            in_current = start <= q <= end
+            
+            if in_current:
+                idx_in_section = q - start
+                is_answered = idx_in_section in (answered_indices or [])
+            else:
+                # Preserve previously detected answered state for other sections
+                is_answered = bool(btn.property('answered'))
+            btn.setProperty('answered', is_answered)
+            
+            # Re-apply stylesheet to reflect property changes
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
+    
+    def on_question_cell_clicked(self, qnum: int):
+        """Navigate to a question number; switch section if needed and scroll to input."""
+        target_section = (qnum - 1) // 10
+        if target_section != self.current_section:
+            self.switch_section(target_section)
+            QTimer.singleShot(600, lambda: self.scroll_to_question(qnum))
+        else:
+            self.scroll_to_question(qnum)
+    
+    def scroll_to_question(self, qnum: int):
+        """Scroll to the question input within the current section."""
+        try:
+            idx = (qnum - 1) % 10
+            js_code = f"""
+            (function() {{
+                try {{
+                    var inputs = document.querySelectorAll('.answer-blank');
+                    var idx = {idx};
+                    if (inputs && inputs.length > idx) {{
+                        var el = inputs[idx];
+                        el.scrollIntoView({{behavior:'smooth', block:'center'}});
+                        if (el.focus) el.focus();
+                        el.style.outline = '2px solid #007bff';
+                        setTimeout(function() {{ el.style.outline = ''; }}, 1500);
+                        return true;
+                    }}
+                    var el2 = document.querySelector('.answer-blank[data-question="{qnum}"]');
+                    if (el2) {{
+                        el2.scrollIntoView({{behavior:'smooth', block:'center'}});
+                        if (el2.focus) el2.focus();
+                        el2.style.outline = '2px solid #007bff';
+                        setTimeout(function() {{ el2.style.outline = ''; }}, 1500);
+                        return true;
+                    }}
+                    return false;
+                }} catch (e) {{
+                    return false;
+                }}
+            }})();
+            """
+            self.web_view.page().runJavaScript(js_code, lambda res: None)
+        except Exception as e:
+            app_logger.debug(f"Failed to scroll to question {qnum}: {e}")
 
     def collect_all_answers(self):
         """Collect all answers from all sections using JavaScript"""
-        all_answers = {}
+        # Initialize collection state
+        self.collected_answers = {}
+        self.sections_to_collect = list(range(4))
+        self.current_collection_index = 0
+        
+        # Start collecting from first section
+        self.collect_next_section()
+    
+    def collect_next_section(self):
+        """Collect answers from the next section in sequence"""
+        if self.current_collection_index >= len(self.sections_to_collect):
+            # All sections collected, save answers
+            self.save_answers_to_file()
+            return
+        
+        section_index = self.sections_to_collect[self.current_collection_index]
         
         # JavaScript code to collect all answers from the current page
         js_code = """
         (function() {
-            var inputs = document.querySelectorAll('.answer-blank');
-            var answers = {};
-            
-            inputs.forEach(function(input, index) {
-                var questionNumber = input.getAttribute('data-question') || (index + 1);
-                var value = input.value ? input.value.trim() : '';
-                answers[questionNumber] = value;
-            });
-            
-            return answers;
+            try {
+                var inputs = document.querySelectorAll('.answer-blank');
+                var answers = {};
+                
+                inputs.forEach(function(input, index) {
+                    var questionNumber = input.getAttribute('data-question') || (index + 1);
+                    var value = input.value ? input.value.trim() : '';
+                    answers[questionNumber] = value;
+                });
+                
+                return {answers: answers, success: true};
+            } catch (error) {
+                return {answers: {}, success: false, error: error.message};
+            }
         })();
         """
         
-        def collect_section_answers(section_index):
-            """Collect answers for a specific section"""
-            # Switch to the section
-            self.switch_section(section_index)
-            
-            # Wait a moment for the page to load
-            QTimer.singleShot(500, lambda: self.web_view.page().runJavaScript(js_code, 
-                lambda result: self.store_section_answers(section_index, result)))
+        # Switch to the section
+        self.switch_section(section_index)
         
-        # Collect answers from all sections
-        for i in range(4):
-            collect_section_answers(i)
+        # Wait for page to load, then collect answers
+        QTimer.singleShot(800, lambda: self.execute_collection_js(section_index, js_code))
+    
+    def execute_collection_js(self, section_index, js_code):
+        """Execute JavaScript to collect answers for a section"""
+        def handle_collection_result(result):
+            try:
+                if result and isinstance(result, dict) and result.get('success', False):
+                    answers = result.get('answers', {})
+                    self.store_section_answers(section_index, answers)
+                else:
+                    error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                    app_logger.debug(f"Failed to collect answers for section {section_index + 1}: {error_msg}")
+                    self.store_section_answers(section_index, {})
+            except Exception as e:
+                app_logger.debug(f"Error processing collection result for section {section_index + 1}: {e}")
+                self.store_section_answers(section_index, {})
         
-        return all_answers
+        try:
+            self.web_view.page().runJavaScript(js_code, handle_collection_result)
+        except Exception as e:
+            app_logger.debug(f"Failed to execute collection JavaScript for section {section_index + 1}: {e}")
+            self.store_section_answers(section_index, {})
     
     def store_section_answers(self, section_index, answers):
         """Store answers for a specific section"""
-        if not hasattr(self, 'collected_answers'):
-            self.collected_answers = {}
-        
         self.collected_answers[f"Section {section_index + 1}"] = answers
         
-        # If we have collected all sections, save the answers
-        if len(self.collected_answers) == 4:
+        # Move to next section
+        self.current_collection_index += 1
+        
+        # Continue with next section or finish if all done
+        if self.current_collection_index < len(self.sections_to_collect):
+            # Collect next section after a short delay
+            QTimer.singleShot(200, self.collect_next_section)
+        else:
+            # All sections collected, save the answers
             self.save_answers_to_file()
     
     def save_answers_to_file(self):
-        """Save all collected answers to a text file in Desktop/IELTS_Practice"""
+        """Save all collected answers to a text file """
         try:
-            # Get Desktop path
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            ielts_practice_path = os.path.join(desktop_path, "IELTS_Practice")
+            ielts_practice_path = os.path.join(os.path.dirname(__file__), '..', 'results', 'listening')
             
             # Create directory if it doesn't exist
             if not os.path.exists(ielts_practice_path):
@@ -985,7 +1214,7 @@ class ListeningTestUI(QWidget):
         
         QMessageBox.information(self, "Test Complete", 
                               "Your listening test has been completed.\n\n"
-                              "Your answers are being saved to Desktop/IELTS_Practice folder.")
+                              "Your answers are being saved to results folder.")
 
 
 
