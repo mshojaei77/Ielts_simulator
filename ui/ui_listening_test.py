@@ -632,26 +632,40 @@ class ListeningTestUI(QWidget):
             
             # Use resource manager to get audio files for this test
             audio_files = self.resource_manager.get_audio_files(current_book, 'listening')
+            app_logger.debug(f"Audio files found for {current_book} (listening): {len(audio_files)}")
+            try:
+                app_logger.debug(f"Sample audio keys: {list(audio_files.keys())[:5]}")
+            except Exception:
+                pass
             
-            # Find the audio file for this specific part
+            # Find the audio file for this specific test and part using ResourceManager paths
             audio_path = None
             part_identifier = f"part-{section_index + 1}"
-            
-            for audio_file in audio_files:
-                if part_identifier in audio_file.lower() or f"part{section_index + 1}" in audio_file.lower():
-                    # Construct full path
-                    audio_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), audio_file)
+            test_identifier = f"test-{int(test_number)}"
+
+            # First, try strict match: both test number and part number in key or filename
+            for audio_key, path in audio_files.items():
+                key_lower = audio_key.lower()
+                basename_lower = os.path.basename(path).lower()
+                if (test_identifier in key_lower or test_identifier in basename_lower) and \
+                   (part_identifier in key_lower or part_identifier in basename_lower or f"part{section_index + 1}" in basename_lower):
+                    audio_path = path
                     break
-            
-            # If no specific part file found, try generic naming
+
+            # Fallback: match by part number only
             if not audio_path:
-                generic_path = self.resource_manager.get_resource_path(
-                    current_book, 'listening', int(test_number), f'part-{section_index + 1}'
-                )
-                if generic_path:
-                    audio_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), generic_path)
-                    if not os.path.exists(audio_path):
-                        audio_path = None
+                for audio_key, path in audio_files.items():
+                    key_lower = audio_key.lower()
+                    basename_lower = os.path.basename(path).lower()
+                    if part_identifier in key_lower or part_identifier in basename_lower or f"part{section_index + 1}" in basename_lower:
+                        audio_path = path
+                        break
+
+            # Note: Do not use get_resource_path for audio (it returns HTML resource paths)
+            if audio_path:
+                app_logger.debug(f"Selected audio path: {audio_path}")
+            else:
+                app_logger.warning(f"No matching audio found for {current_book} Test {test_number} Part {section_index + 1}")
             
             # Validate file exists and is readable
             if not audio_path or not os.path.exists(audio_path):
