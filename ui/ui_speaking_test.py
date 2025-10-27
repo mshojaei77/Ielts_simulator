@@ -92,7 +92,7 @@ class SpeakingTestUI(QWidget):
         self.audio_supported = QAudioInput is not None and QAudioFormat is not None
 
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        self.recordings_dir = os.path.join(self.base_dir, 'recordings', 'speaking')
+        self.recordings_dir = os.path.join(self.base_dir, 'results', 'speaking')
         os.makedirs(self.recordings_dir, exist_ok=True)
         
         # Initialize resource manager
@@ -881,27 +881,6 @@ class SpeakingTestUI(QWidget):
                 border-radius: 5px;
                 border: 2px solid #c0392b;
             """)
-            
-            # Show completion dialog with AI analysis placeholder
-            self.show_part_completion_dialog()
-
-    def show_part_completion_dialog(self):
-        """Show completion dialog with AI analysis placeholder"""
-        completion_message = f"""SPEAKING TEST RESULTS - Part {self.current_part + 1}
-=============================
-
-Your speaking test part has been completed!
-
-AI Analysis: [Coming Soon]
-- Fluency and Coherence
-- Lexical Resource
-- Grammatical Range and Accuracy
-- Pronunciation
-
-Your recording has been saved for future AI analysis.
-Detailed feedback will be available once AI analysis is implemented."""
-        
-        QMessageBox.information(self, 'Part Completed - AI Analysis Pending', completion_message)
 
     def update_timer_display(self):
         """Update the visual countdown display"""

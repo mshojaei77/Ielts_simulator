@@ -5,7 +5,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
 from resource_manager import get_resource_manager
-from grading_system import IELTSGrader
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -632,7 +631,7 @@ class ListeningTestUI(QWidget):
                 raise ValueError("No test or book selected")
             
             # Use resource manager to get audio files for this test
-            audio_files = self.resource_manager.get_audio_files(current_book, 'listening', int(test_number))
+            audio_files = self.resource_manager.get_audio_files(current_book, 'listening')
             
             # Find the audio file for this specific part
             audio_path = None
@@ -1274,51 +1273,13 @@ class ListeningTestUI(QWidget):
                               f"Failed to save answers: {str(e)}")
     
     def show_test_summary(self):
-        """Show test completion summary with grading results and save answers"""
+        """Show test completion summary and save answers"""
         # Collect and save answers
         self.collect_all_answers()
         
-        # Initialize grader and load answer keys
-        grader = IELTSGrader("resources")
-        grading_successful = grader.load_answer_keys(self.selected_book)
-        
-        if grading_successful and hasattr(self, 'all_answers') and self.all_answers:
-            # Grade the answers
-            correct_count, total_questions, detailed_results = grader.grade_listening_section(self.all_answers)
-            band_score = grader.calculate_band_score(correct_count, total_questions, "listening")
-            percentage = (correct_count / total_questions * 100) if total_questions > 0 else 0
-            
-            # Create detailed grading message
-            grading_message = f"""LISTENING TEST RESULTS
-{'=' * 30}
-
-Overall Score: {correct_count}/{total_questions} ({percentage:.1f}%)
-Band Score: {band_score}
-
-Your answers have been saved to the results folder.
-
-Would you like to see detailed results?"""
-            
-            # Show results with option to view details
-            reply = QMessageBox.question(self, "Test Complete - Results", grading_message,
-                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            
-            if reply == QMessageBox.Yes:
-                detailed_report = grader.generate_grading_report("listening", correct_count, total_questions, detailed_results)
-                
-                # Create a custom dialog for detailed results
-                detail_dialog = QMessageBox(self)
-                detail_dialog.setWindowTitle("Detailed Listening Results")
-                detail_dialog.setText(detailed_report)
-                detail_dialog.setStandardButtons(QMessageBox.Ok)
-                detail_dialog.setDetailedText("Detailed breakdown of your performance by section.")
-                detail_dialog.exec_()
-        else:
-            # Fallback to simple completion message if grading fails
-            QMessageBox.information(self, "Test Complete", 
-                                  "Your listening test has been completed.\n\n"
-                                  "Your answers are being saved to results folder.\n\n"
-                                  "Note: Grading results are not available (answer key not found).")
+        QMessageBox.information(self, "Test Complete", 
+                              "Your listening test has been completed.\n\n"
+                              "Your answers are being saved to results folder.")
 
 
 
