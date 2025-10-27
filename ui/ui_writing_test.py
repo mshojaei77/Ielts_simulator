@@ -141,7 +141,7 @@ class WritingTestUI(QWidget):
             }
             
         except Exception as e:
-            app_logger.debug(f"Error loading writing subjects: {str(e)}")
+            app_logger.error("Error loading writing subjects", exc_info=True)
             # Return default structure
             return {
                 "task1_subjects": [f"Test {i}" for i in range(1, 5)],
@@ -171,12 +171,12 @@ class WritingTestUI(QWidget):
                         content = f.read()
                     return content.strip()
                 else:
-                    app_logger.debug(f"Writing content file not found: {full_path}")
+                    app_logger.warning(f"Writing content file not found: {full_path}")
             
             return self.get_default_content(task_num)
                 
         except Exception as e:
-            app_logger.debug(f"Error loading writing content: {str(e)}")
+            app_logger.error("Error loading writing content", exc_info=True)
             return self.get_default_content(task_num)
 
     def get_default_content(self, task_num):
@@ -625,7 +625,7 @@ class WritingTestUI(QWidget):
                 app_logger.warning(f"Book not found: {cambridge_book}")
                 
         except Exception as e:
-            app_logger.error(f"Error loading writing content: {e}")
+            app_logger.error("Error loading writing content", exc_info=True)
             # Fallback to setHtml with default content
             content = self.get_default_content(task_num)
             self.web_view.setHtml(content)
@@ -703,7 +703,7 @@ class WritingTestUI(QWidget):
             self.end_test()
 
     def end_test(self):
-        """End the test"""
+        """End the test with AI analysis placeholder"""
         reply = QMessageBox.question(self, 'End Test', 
                                    'Are you sure you want to end the test?',
                                    QMessageBox.Yes | QMessageBox.No, 
@@ -713,7 +713,23 @@ class WritingTestUI(QWidget):
             self.timer.stop()
             self.test_started = False
             self.start_test_button.setText("Start Test")
-            QMessageBox.information(self, 'Test Completed', 'Your test has been completed!')
+            
+            # Show completion message with AI analysis placeholder
+            completion_message = """WRITING TEST RESULTS
+=============================
+
+Your writing test has been completed!
+
+AI Analysis: [Coming Soon]
+- Task Achievement/Response
+- Coherence and Cohesion  
+- Lexical Resource
+- Grammatical Range and Accuracy
+
+Your responses have been saved for future AI analysis.
+Detailed feedback will be available once AI analysis is implemented."""
+            
+            QMessageBox.information(self, 'Test Completed - AI Analysis Pending', completion_message)
 
     def start_actual_test(self):
         """Start the actual test from protection overlay"""
@@ -814,4 +830,4 @@ class WritingTestUI(QWidget):
             self.update_task_content()
         except Exception as e:
             from logger import app_logger
-            app_logger.error(f"Error refreshing writing test resources: {e}")
+            app_logger.error("Error refreshing writing test resources", exc_info=True)

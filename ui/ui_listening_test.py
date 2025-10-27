@@ -5,6 +5,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
 from resource_manager import get_resource_manager
+from grading_system import IELTSGrader
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -501,7 +502,7 @@ class ListeningTestUI(QWidget):
             return listening_structure
             
         except Exception as e:
-            app_logger.debug(f"Error loading subjects: {e}")
+            app_logger.warning(f"Failed to load listening subjects; using default structure. Details: {e}", exc_info=True)
             # Return default structure
             return {
                 "listening": {
@@ -566,7 +567,7 @@ class ListeningTestUI(QWidget):
             app_logger.info(f"Loaded HTML: {full_path}")
             
         except (FileNotFoundError, ValueError, OSError) as e:
-            app_logger.debug(f"Error loading HTML for section {section_index + 1}: {e}")
+            app_logger.error(f"Error loading HTML for section {section_index + 1}: {e}", exc_info=True)
             # Show user-friendly error in web view
             fallback_html = f"""
             <html>
@@ -598,7 +599,7 @@ class ListeningTestUI(QWidget):
             """
             self.web_view.setHtml(fallback_html)
         except Exception as e:
-            app_logger.debug(f"Unexpected error loading HTML for section {section_index + 1}: {e}")
+            app_logger.error(f"Unexpected error loading HTML for section {section_index + 1}: {e}", exc_info=True)
             # Show generic error in web view
             error_html = f"""
             <html>
@@ -679,12 +680,12 @@ class ListeningTestUI(QWidget):
             app_logger.debug(f"Loaded audio: {audio_path}")
                 
         except (FileNotFoundError, ValueError, OSError) as e:
-            app_logger.debug(f"Error loading audio for section {section_index + 1}: {e}")
+            app_logger.error(f"Error loading audio for section {section_index + 1}: {e}", exc_info=True)
             # Clear any existing media to prevent playing wrong audio
             self.media_player.setMedia(QMediaContent())
             
         except Exception as e:
-            app_logger.debug(f"Unexpected error loading audio for section {section_index + 1}: {e}")
+            app_logger.error(f"Unexpected error loading audio for section {section_index + 1}: {e}", exc_info=True)
             # Clear any existing media to prevent playing wrong audio
             self.media_player.setMedia(QMediaContent())
 
@@ -732,7 +733,7 @@ class ListeningTestUI(QWidget):
             
             # Ensure current_section is within valid range
             if not (0 <= self.current_section <= 3):
-                app_logger.debug(f"Warning: Invalid current_section value: {self.current_section}. Resetting to 0.")
+                app_logger.warning(f"Invalid current_section value: {self.current_section}. Resetting to 0.")
                 self.current_section = 0
             
             # Check if buttons exist before updating them
@@ -746,7 +747,7 @@ class ListeningTestUI(QWidget):
                 else:
                     self.back_button.setToolTip("No previous section")
             else:
-                app_logger.debug("Warning: back_button not found or is None")
+                app_logger.warning("back_button not found or is None")
             
             if hasattr(self, 'next_button') and self.next_button is not None:
                 # Always enable next/finish button; change behavior on last section
@@ -768,14 +769,14 @@ class ListeningTestUI(QWidget):
                     self.next_button.setToolTip("Finish test and save your answers")
                     self.next_button.clicked.connect(self.finish_test)
             else:
-                app_logger.debug("Warning: next_button not found or is None")
+                app_logger.warning("next_button not found or is None")
                 
             # Update section indicator if it exists
             if hasattr(self, 'section_label') and self.section_label is not None:
                 self.section_label.setText(f"Section {self.current_section + 1} of 4")
                 
         except Exception as e:
-            app_logger.debug(f"Error updating navigation buttons: {e}")
+            app_logger.error(f"Error updating navigation buttons: {e}", exc_info=True)
             # Fallback: disable both buttons to prevent crashes
             if hasattr(self, 'back_button') and self.back_button is not None:
                 self.back_button.setEnabled(False)
@@ -798,7 +799,7 @@ class ListeningTestUI(QWidget):
             # Reuse existing end-test flow (confirmation + summary + save)
             self.toggle_test()
         except Exception as e:
-            app_logger.debug(f"Error finishing test: {e}")
+            app_logger.error(f"Error finishing test: {e}", exc_info=True)
 
 
 
@@ -860,7 +861,7 @@ class ListeningTestUI(QWidget):
             QTimer.singleShot(3000, self.reset_audio_test_button)
             
         except Exception as e:
-            app_logger.debug(f"Error playing audio test: {e}")
+            app_logger.warning(f"Error playing audio test: {e}", exc_info=True)
             self.audio_status_label.setText("❌ Audio test failed")
     
     def reset_audio_test_button(self):
@@ -877,7 +878,7 @@ class ListeningTestUI(QWidget):
                     os.unlink(self.temp_audio_file)
                 delattr(self, 'temp_audio_file')
             except Exception as e:
-                app_logger.debug(f"Error cleaning up temp audio file: {e}")
+                app_logger.warning(f"Error cleaning up temp audio file: {e}", exc_info=True)
     
     def stop_audio(self):
         """Stop audio playback when navigating away from listening section"""
@@ -887,7 +888,7 @@ class ListeningTestUI(QWidget):
                 self.is_playing = False
                 app_logger.debug("Audio stopped due to section navigation")
         except Exception as e:
-            app_logger.debug(f"Error stopping audio: {e}")
+            app_logger.debug(f"Error stopping audio: {e}", exc_info=True)
     
     def start_actual_test(self):
         """Start the actual test by hiding overlay and showing web view"""
@@ -1000,17 +1001,17 @@ class ListeningTestUI(QWidget):
                         self.refresh_question_tracker(answered)
                     else:
                         error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                        app_logger.debug(f"JavaScript execution error: {error_msg}")
+                        app_logger.warning(f"JavaScript execution error: {error_msg}")
                         self.refresh_question_tracker([])
                 except Exception as e:
-                    app_logger.debug(f"Error handling JavaScript result: {e}")
+                    app_logger.error("Error handling JavaScript result", exc_info=True)
                     self.refresh_question_tracker([])
             
             try:
                 self.web_view.page().runJavaScript(js_code, handle_result)
             except Exception as e:
                 # Fallback if JavaScript execution fails
-                app_logger.debug(f"Failed to execute JavaScript: {e}")
+                app_logger.error("Failed to execute JavaScript", exc_info=True)
                 self.refresh_question_tracker([])
     
     def build_question_tracker(self, main_layout):
@@ -1131,7 +1132,7 @@ class ListeningTestUI(QWidget):
             """
             self.web_view.page().runJavaScript(js_code, lambda res: None)
         except Exception as e:
-            app_logger.debug(f"Failed to scroll to question {qnum}: {e}")
+            app_logger.warning(f"Failed to scroll to question {qnum}", exc_info=True)
 
     def collect_all_answers(self):
         """Collect all answers from all sections using JavaScript"""
@@ -1187,10 +1188,10 @@ class ListeningTestUI(QWidget):
                     self.store_section_answers(section_index, answers)
                 else:
                     error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                    app_logger.debug(f"Failed to collect answers for section {section_index + 1}: {error_msg}")
+                    app_logger.warning(f"Failed to collect answers for section {section_index + 1}: {error_msg}")
                     self.store_section_answers(section_index, {})
             except Exception as e:
-                app_logger.debug(f"Error processing collection result for section {section_index + 1}: {e}")
+                app_logger.error(f"Error processing collection result for section {section_index + 1}", exc_info=True)
                 self.store_section_answers(section_index, {})
     
     def store_section_answers(self, section_index, answers):
@@ -1268,17 +1269,56 @@ class ListeningTestUI(QWidget):
                                   f"File location: {file_path}")
             
         except Exception as e:
+            app_logger.error("Failed to save listening answers to file", exc_info=True)
             QMessageBox.warning(self, "Save Error", 
                               f"Failed to save answers: {str(e)}")
     
     def show_test_summary(self):
-        """Show test completion summary and save answers"""
+        """Show test completion summary with grading results and save answers"""
         # Collect and save answers
         self.collect_all_answers()
         
-        QMessageBox.information(self, "Test Complete", 
-                              "Your listening test has been completed.\n\n"
-                              "Your answers are being saved to results folder.")
+        # Initialize grader and load answer keys
+        grader = IELTSGrader("resources")
+        grading_successful = grader.load_answer_keys(self.selected_book)
+        
+        if grading_successful and hasattr(self, 'all_answers') and self.all_answers:
+            # Grade the answers
+            correct_count, total_questions, detailed_results = grader.grade_listening_section(self.all_answers)
+            band_score = grader.calculate_band_score(correct_count, total_questions, "listening")
+            percentage = (correct_count / total_questions * 100) if total_questions > 0 else 0
+            
+            # Create detailed grading message
+            grading_message = f"""LISTENING TEST RESULTS
+{'=' * 30}
+
+Overall Score: {correct_count}/{total_questions} ({percentage:.1f}%)
+Band Score: {band_score}
+
+Your answers have been saved to the results folder.
+
+Would you like to see detailed results?"""
+            
+            # Show results with option to view details
+            reply = QMessageBox.question(self, "Test Complete - Results", grading_message,
+                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                detailed_report = grader.generate_grading_report("listening", correct_count, total_questions, detailed_results)
+                
+                # Create a custom dialog for detailed results
+                detail_dialog = QMessageBox(self)
+                detail_dialog.setWindowTitle("Detailed Listening Results")
+                detail_dialog.setText(detailed_report)
+                detail_dialog.setStandardButtons(QMessageBox.Ok)
+                detail_dialog.setDetailedText("Detailed breakdown of your performance by section.")
+                detail_dialog.exec_()
+        else:
+            # Fallback to simple completion message if grading fails
+            QMessageBox.information(self, "Test Complete", 
+                                  "Your listening test has been completed.\n\n"
+                                  "Your answers are being saved to results folder.\n\n"
+                                  "Note: Grading results are not available (answer key not found).")
 
 
 
@@ -1317,5 +1357,5 @@ class ListeningTestUI(QWidget):
             
             app_logger.info("ListeningTestUI resources refreshed successfully (fixed selection)")
         except Exception as e:
-            app_logger.error(f"Error refreshing ListeningTestUI resources: {e}")
+            app_logger.error("Error refreshing ListeningTestUI resources", exc_info=True)
             QMessageBox.warning(self, "Resource Refresh Error", f"Failed to refresh resources: {str(e)}")

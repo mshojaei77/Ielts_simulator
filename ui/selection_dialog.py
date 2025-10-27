@@ -84,12 +84,13 @@ class BookTestSelectionDialog(QDialog):
                 return
             self.book_combo.clear()
             self.book_combo.addItems(books)
-            # Trigger population of tests for the first book
-            if books:
-                self._populate_tests_for_book(books[0])
-                self.book_combo.setCurrentText(books[0])
+            
+            # Set Cambridge 20 as default if available, otherwise use first book
+            default_book = "Cambridge 20" if "Cambridge 20" in books else books[0]
+            self._populate_tests_for_book(default_book)
+            self.book_combo.setCurrentText(default_book)
         except Exception as e:
-            app_logger.error(f"Error populating books in selection dialog: {e}")
+            app_logger.error("Error populating books in selection dialog", exc_info=True)
             self.book_combo.addItem("Error loading books")
 
     def _available_tests_by_type(self, book: str) -> List[List[int]]:
@@ -100,7 +101,7 @@ class BookTestSelectionDialog(QDialog):
             sp = self.resource_manager.get_available_tests(book, 'speaking')
             return [lt, rd, wr, sp]
         except Exception as e:
-            app_logger.error(f"Error retrieving tests for book {book}: {e}")
+            app_logger.error(f"Error retrieving tests for book {book}", exc_info=True)
             return [[], [], [], []]
 
     def _populate_tests_for_book(self, book: str):
@@ -138,9 +139,11 @@ class BookTestSelectionDialog(QDialog):
             for t in tests:
                 self.test_combo.addItem(f"Test {t}")
             if tests:
-                self.test_combo.setCurrentText(f"Test {tests[0]}")
+                # Set Test 1 as default if available, otherwise use first available test
+                default_test = 1 if 1 in tests else tests[0]
+                self.test_combo.setCurrentText(f"Test {default_test}")
         except Exception as e:
-            app_logger.error(f"Error populating tests for book {book}: {e}")
+            app_logger.error(f"Error populating tests for book {book}", exc_info=True)
             self.test_combo.addItem("Error loading tests")
 
     def _on_book_changed(self, book: str):

@@ -21,7 +21,7 @@ def _get_log_level_from_env() -> int:
     Returns:
         Logging level constant (e.g., logging.DEBUG, logging.INFO, etc.)
     """
-    log_level_str = os.getenv('LOG_LEVEL', 'DEBUG').upper().strip()
+    log_level_str = os.getenv('LOG_LEVEL', 'WARNING').upper().strip()
     
     # Map string values to logging constants
     level_mapping = {
@@ -240,25 +240,25 @@ class Logger:
             return "unknown", "unknown"
 
     @handle_recursion
-    def debug(self, message, exc_info=True):
+    def debug(self, message, exc_info=False):
         try:
-            self.logger.debug(str(message))
+            self.logger.debug(str(message), exc_info=exc_info)
         except Exception:
-            self.logger.debug(str(message))
+            self.logger.debug(str(message), exc_info=exc_info)
 
     @handle_recursion
-    def info(self, message, exc_info=True):
+    def info(self, message, exc_info=False):
         try:
-            self.logger.info(str(message))
+            self.logger.info(str(message), exc_info=exc_info)
         except Exception:
-            self.logger.info(str(message))
+            self.logger.info(str(message), exc_info=exc_info)
 
     @handle_recursion
-    def warning(self, message, exc_info=True):
+    def warning(self, message, exc_info=False):
         try:
-            self.logger.warning(str(message))
+            self.logger.warning(str(message), exc_info=exc_info)
         except Exception:
-            self.logger.warning(str(message))
+            self.logger.warning(str(message), exc_info=exc_info)
 
     @handle_recursion
     def error(self, message, exc_info=True):
@@ -270,9 +270,9 @@ class Logger:
     @handle_recursion
     def critical(self, message, exc_info=True):
         try:
-            self.logger.critical(str(message))
+            self.logger.critical(str(message), exc_info=exc_info)
         except Exception:
-            self.logger.critical(str(message))
+            self.logger.critical(str(message), exc_info=exc_info)
 
 # Create a global logger instance using environment configuration
 app_logger = Logger()

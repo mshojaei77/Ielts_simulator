@@ -4,6 +4,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
 from resource_manager import get_resource_manager
+from grading_system import IELTSGrader
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy)
@@ -136,7 +137,7 @@ class ReadingTestUI(QWidget):
                 available_tests = ["Test 1", "Test 2", "Test 3", "Test 4"]
                 
         except Exception as e:
-            app_logger.debug(f"Error scanning reading directory: {e}")
+            app_logger.error("Error scanning reading directory", exc_info=True)
             available_tests = ["Test 1", "Test 2", "Test 3", "Test 4"]
         
         return {"reading_subjects": available_tests}
@@ -522,18 +523,18 @@ class ReadingTestUI(QWidget):
             if hasattr(self, 'content_stack') and self.content_stack.currentWidget() == getattr(self, 'test_content_widget', None):
                 self.load_passage_content()
         except Exception as e:
-            app_logger.error(f"Error refreshing reading test resources: {e}")
+            app_logger.error("Error refreshing reading test resources", exc_info=True)
 
     def on_page_loaded(self, ok: bool):
         """Called when the passage HTML finishes loading; refresh completion state and stretch content to the edges."""
         try:
             self.inject_full_width_styles()
         except Exception as e:
-            app_logger.debug(f"Error injecting full-width styles: {e}")
+            app_logger.error("Error injecting full-width styles", exc_info=True)
         try:
             self.update_completion_count()
         except Exception as e:
-            app_logger.debug(f"Error updating completion after page load: {e}")
+            app_logger.error("Error updating completion after page load", exc_info=True)
 
     def inject_full_width_styles(self):
         """Inject CSS/JS into the loaded page to remove margins/padding and make content full-width."""
@@ -582,7 +583,7 @@ class ReadingTestUI(QWidget):
         try:
             self.web_view.page().runJavaScript(js)
         except Exception as e:
-            app_logger.debug(f"Error applying full-bleed styles: {e}")
+            app_logger.error("Error applying full-bleed styles", exc_info=True)
 
     def update_completion_count(self):
         """Update completion count and question tracker for current section"""
@@ -693,14 +694,14 @@ class ReadingTestUI(QWidget):
                         self.refresh_question_tracker(list(union_set))
                     else:
                         error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                        app_logger.debug(f"JavaScript execution error: {error_msg}")
+                        app_logger.warning(f"JavaScript execution error: {error_msg}")
                         # Fallback: preserve previous count
                         union_set = set().union(*self.reading_answers_by_passage.values())
                         self.completed_questions = len(union_set)
                         self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
                         self.refresh_question_tracker(list(union_set))
                 except Exception as e:
-                    app_logger.debug(f"Error handling JavaScript result: {e}")
+                    app_logger.error("Error handling JavaScript result", exc_info=True)
                     # Fallback: preserve previous count
                     union_set = set().union(*self.reading_answers_by_passage.values())
                     self.completed_questions = len(union_set)
@@ -711,7 +712,7 @@ class ReadingTestUI(QWidget):
                 self.web_view.page().runJavaScript(js_code, handle_result)
             except Exception as e:
                 # Fallback if JavaScript execution fails
-                app_logger.debug(f"Failed to execute JavaScript: {e}")
+                app_logger.error("Failed to execute JavaScript", exc_info=True)
                 union_set = set().union(*self.reading_answers_by_passage.values())
                 self.completed_questions = len(union_set)
                 self.completion_label.setText(f"Completed: {self.completed_questions}/40 (Passage {self.current_passage + 1})")
@@ -827,7 +828,7 @@ class ReadingTestUI(QWidget):
                 app_logger.warning(f"No reading passage found for {current_book} Test {test_num} Passage {passage_num}")
                 
         except Exception as e:
-            app_logger.error(f"Error loading reading passage: {e}")
+            app_logger.error("Error loading reading passage", exc_info=True)
             # Load placeholder content on error
             placeholder_html = self.create_placeholder_html(passage_num)
             self.web_view.setHtml(placeholder_html)
@@ -1061,7 +1062,7 @@ class ReadingTestUI(QWidget):
         try:
             self.web_view.page().runJavaScript(js)
         except Exception as e:
-            app_logger.debug(f"Error scrolling to question {qnum}: {e}")
+            app_logger.debug(f"Error scrolling to question {qnum}", exc_info=True)
 
     def update_timer_display(self):
         """Update the timer display and handle end-of-test logic."""
@@ -1116,12 +1117,51 @@ class ReadingTestUI(QWidget):
             self.show_test_summary()
 
     def show_test_summary(self):
-        """Show test completion summary and save answers"""
+        """Show test completion summary with grading results and save answers"""
         # Collect and save answers
         self.collect_all_answers()
-        QMessageBox.information(self, "Test Complete", 
-                              "Your reading test has been completed.\n\n"
-                              "Your answers are being saved to results folder.")
+        
+        # Initialize grader and load answer keys
+        grader = IELTSGrader("resources")
+        grading_successful = grader.load_answer_keys(self.selected_book)
+        
+        if grading_successful and hasattr(self, 'all_answers') and self.all_answers:
+            # Grade the answers
+            correct_count, total_questions, detailed_results = grader.grade_reading_section(self.all_answers)
+            band_score = grader.calculate_band_score(correct_count, total_questions, "reading")
+            percentage = (correct_count / total_questions * 100) if total_questions > 0 else 0
+            
+            # Create detailed grading message
+            grading_message = f"""READING TEST RESULTS
+{'=' * 30}
+
+Overall Score: {correct_count}/{total_questions} ({percentage:.1f}%)
+Band Score: {band_score}
+
+Your answers have been saved to the results folder.
+
+Would you like to see detailed results?"""
+            
+            # Show results with option to view details
+            reply = QMessageBox.question(self, "Test Complete - Results", grading_message,
+                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                detailed_report = grader.generate_grading_report("reading", correct_count, total_questions, detailed_results)
+                
+                # Create a custom dialog for detailed results
+                detail_dialog = QMessageBox(self)
+                detail_dialog.setWindowTitle("Detailed Reading Results")
+                detail_dialog.setText(detailed_report)
+                detail_dialog.setStandardButtons(QMessageBox.Ok)
+                detail_dialog.setDetailedText("Detailed breakdown of your performance by passage.")
+                detail_dialog.exec_()
+        else:
+            # Fallback to simple completion message if grading fails
+            QMessageBox.information(self, "Test Complete", 
+                                  "Your reading test has been completed.\n\n"
+                                  "Your answers are being saved to results folder.\n\n"
+                                  "Note: Grading results are not available (answer key not found).")
 
     def collect_all_answers(self):
         """Collect answers from all three passages using JavaScript"""
@@ -1221,15 +1261,15 @@ class ReadingTestUI(QWidget):
                     self.store_passage_answers(passage_index, answers)
                 else:
                     error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                    app_logger.debug(f"Failed to collect answers for passage {passage_index + 1}: {error_msg}")
+                    app_logger.warning(f"Failed to collect answers for passage {passage_index + 1}: {error_msg}")
                     self.store_passage_answers(passage_index, {})
             except Exception as e:
-                app_logger.debug(f"Error processing collection result for passage {passage_index + 1}: {e}")
+                app_logger.error(f"Error processing collection result for passage {passage_index + 1}", exc_info=True)
                 self.store_passage_answers(passage_index, {})
         try:
             self.web_view.page().runJavaScript(js_code, handle_collection_result)
         except Exception as e:
-            app_logger.debug(f"JavaScript execution error on passage {passage_index + 1}: {e}")
+            app_logger.error(f"JavaScript execution error on passage {passage_index + 1}", exc_info=True)
             self.store_passage_answers(passage_index, {})
 
     def store_passage_answers(self, passage_index, answers):
@@ -1284,4 +1324,5 @@ class ReadingTestUI(QWidget):
             QMessageBox.information(self, "Answers Saved", 
                                   f"Your answers have been saved successfully!\n\nFile location: {file_path}")
         except Exception as e:
+            app_logger.error("Failed to save reading answers to file", exc_info=True)
             QMessageBox.warning(self, "Save Error", f"Failed to save answers: {str(e)}")

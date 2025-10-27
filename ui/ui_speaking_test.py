@@ -147,7 +147,7 @@ class SpeakingTestUI(QWidget):
                 tests = self.resource_manager.get_available_tests(current_book, 'speaking')
                 return tests if tests else [1]
         except Exception as e:
-            app_logger.debug(f"Error loading available tests: {e}")
+            app_logger.error("Error loading available tests", exc_info=True)
         return [1]
 
     def get_part_file_path(self, test_num, part_num):
@@ -173,7 +173,7 @@ class SpeakingTestUI(QWidget):
                 app_logger.warning(f"Book not found: {current_book}")
                 
         except Exception as e:
-            app_logger.error(f"Error getting part file path: {e}")
+            app_logger.error("Error getting part file path", exc_info=True)
         
         # Fallback to default path structure
         fallback_path = os.path.join("resources", "Cambridge20", "speaking", f"Test-{test_num}-Part-{part_num + 1}.html")
@@ -881,6 +881,27 @@ class SpeakingTestUI(QWidget):
                 border-radius: 5px;
                 border: 2px solid #c0392b;
             """)
+            
+            # Show completion dialog with AI analysis placeholder
+            self.show_part_completion_dialog()
+
+    def show_part_completion_dialog(self):
+        """Show completion dialog with AI analysis placeholder"""
+        completion_message = f"""SPEAKING TEST RESULTS - Part {self.current_part + 1}
+=============================
+
+Your speaking test part has been completed!
+
+AI Analysis: [Coming Soon]
+- Fluency and Coherence
+- Lexical Resource
+- Grammatical Range and Accuracy
+- Pronunciation
+
+Your recording has been saved for future AI analysis.
+Detailed feedback will be available once AI analysis is implemented."""
+        
+        QMessageBox.information(self, 'Part Completed - AI Analysis Pending', completion_message)
 
     def update_timer_display(self):
         """Update the visual countdown display"""
@@ -949,4 +970,4 @@ class SpeakingTestUI(QWidget):
                 
         except Exception as e:
             from logger import app_logger
-            app_logger.error(f"Error refreshing speaking test resources: {e}")
+            app_logger.error("Error refreshing speaking test resources", exc_info=True)
