@@ -3,6 +3,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
+from resource_manager import get_resource_manager
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy)
@@ -10,11 +11,20 @@ from PyQt5.QtCore import Qt, QTimer, QTime, QUrl, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
+from datetime import datetime
 
 class ReadingTestUI(QWidget):
-    def __init__(self):
+    def __init__(self, selected_book: str = None, selected_test: int = None):
         super().__init__()
         self.module_type = "academic"  # Always academic now
+        
+        # Initialize resource manager
+        self.resource_manager = get_resource_manager()
+        
+        # Fixed selection context provided at app startup (no in-app switching)
+        self.selected_book = selected_book
+        self.selected_test = int(selected_test) if selected_test is not None else None
+        
         self.subjects = self.load_subjects()
         self.total_time = 60 * 60  # 60 minutes in seconds
         self.time_remaining = self.total_time
@@ -93,34 +103,33 @@ class ReadingTestUI(QWidget):
             }
         """)
 
-    def load_subjects(self, cambridge_book="Cambridge 20"):
-        """Load available reading tests based on txt files in the directory"""
-        # Map Cambridge book names to directory names
-        book_mapping = {
-            "Cambridge 20": "Cambridge20",
-            "Cambridge 19": "Cambridge19"
-        }
+    def load_subjects(self, cambridge_book=None):
+        """Load available reading tests based on files in the directory"""
+        if cambridge_book is None:
+            # Use fixed selection from startup dialog
+            cambridge_book = getattr(self, 'selected_book', None)
         
-        book_dir = book_mapping.get(cambridge_book, "Cambridge20")
-        reading_dir = f"resources/{book_dir}/reading"
+        if not cambridge_book or cambridge_book == "No books found":
+            return {"reading_subjects": ["Test 1", "Test 2", "Test 3", "Test 4"]}
         
         # Check for available test files
         available_tests = []
         try:
-            if os.path.exists(reading_dir):
-                files = os.listdir(reading_dir)
-                # Look for Test-X-Passage-Y.html files
-                test_numbers = set()
-                for file in files:
-                    if file.startswith("Test-") and file.endswith(".html"):
-                        parts = file.split("-")
-                        if len(parts) >= 2:
-                            test_num = parts[1]
-                            test_numbers.add(test_num)
-                
-                # Create test list
-                for test_num in sorted(test_numbers):
-                    available_tests.append(f"Test {test_num}")
+            # Get available reading tests from resource manager
+            available_files = self.resource_manager.get_available_test_files(cambridge_book, 'reading')
+            
+            # Look for Test-X-Passage-Y.html files
+            test_numbers = set()
+            for file in available_files:
+                if file.startswith("Test-") and file.endswith(".html"):
+                    parts = file.split("-")
+                    if len(parts) >= 2:
+                        test_num = parts[1]
+                        test_numbers.add(test_num)
+            
+            # Create test list
+            for test_num in sorted(test_numbers):
+                available_tests.append(f"Test {test_num}")
             
             # If no tests found, provide defaults
             if not available_tests:
@@ -150,19 +159,11 @@ class ReadingTestUI(QWidget):
         test_info_label = QLabel("Cambridge IELTS Academic Reading Test")
         test_info_label.setStyleSheet("font-size: 14px; font-weight: bold; background-color: #f0f0f0;")
         
-        # Cambridge book selection
-        book_label = QLabel("Book:")
-        book_label.setStyleSheet("background-color: #f0f0f0;")
-        self.book_combo = QComboBox()
-        self.book_combo.addItems(["Cambridge 20", "Cambridge 19"])
-        self.book_combo.setMinimumWidth(120)
-        self.book_combo.currentTextChanged.connect(self.update_subject_options)
-        
-        # Subject selection
-        test_label = QLabel("Test:")
-        test_label.setStyleSheet("background-color: #f0f0f0;")
-        self.subject_combo = QComboBox()
-        self.subject_combo.setMinimumWidth(100)
+        # Selected book/test info (static; combos removed)
+        chosen_book_label = QLabel(f"Book: {self.selected_book or 'N/A'}")
+        chosen_book_label.setStyleSheet("background-color: #f0f0f0;")
+        chosen_test_label = QLabel(f"Test: {self.selected_test if self.selected_test is not None else 'N/A'}")
+        chosen_test_label.setStyleSheet("background-color: #f0f0f0;")
         
         # Center section - Passage tabs
         tab_widget = QWidget()
@@ -227,10 +228,8 @@ class ReadingTestUI(QWidget):
         
         # Layout top bar
         top_bar_layout.addWidget(test_info_label)
-        top_bar_layout.addWidget(book_label)
-        top_bar_layout.addWidget(self.book_combo)
-        top_bar_layout.addWidget(test_label)
-        top_bar_layout.addWidget(self.subject_combo)
+        top_bar_layout.addWidget(chosen_book_label)
+        top_bar_layout.addWidget(chosen_test_label)
         top_bar_layout.addStretch()
         top_bar_layout.addWidget(tab_widget)
         top_bar_layout.addStretch()
@@ -344,11 +343,7 @@ class ReadingTestUI(QWidget):
         # Set the main layout
         self.setLayout(main_layout)
         
-        # Initialize with sample content
-        self.update_subject_options()
-        self.subject_combo.currentIndexChanged.connect(self.load_selected_subject)
-        
-        # Load first passage initially
+        # Initialize content for fixed book/test
         self.load_passage_content()
 
     def create_protection_overlay(self):
@@ -498,8 +493,36 @@ class ReadingTestUI(QWidget):
                     background-color: #45a049;
                 }
             """)
+            # Optional: disable inputs to prevent further edits
+            try:
+                disable_js = r"""
+                (function(){
+                    try {
+                        var nodes = document.querySelectorAll('input, textarea, select');
+                        nodes.forEach(function(n){ n.setAttribute('disabled','true'); });
+                        var editables = document.querySelectorAll('[contenteditable="true"]');
+                        editables.forEach(function(el){ el.setAttribute('contenteditable','false'); });
+                        return true;
+                    } catch(e) { return false; }
+                })();
+                """
+                if hasattr(self, 'web_view') and self.web_view.page():
+                    self.web_view.page().runJavaScript(disable_js)
+            except Exception:
+                pass
             self.content_stack.setCurrentWidget(self.protection_overlay)
-            QMessageBox.information(self, "Test Completed", "Your Reading test has been completed and submitted.")
+            # --- Added: collect and save answers, and show summary ---
+            self.show_test_summary()
+
+    def refresh_resources(self):
+        """Refresh the UI when resources change. In fixed-selection mode, keep current book/test."""
+        try:
+            app_logger.info("ReadingTestUI: resources changed; keeping selected book/test fixed.")
+            # Optionally reload current passage to reflect any updates on disk
+            if hasattr(self, 'content_stack') and self.content_stack.currentWidget() == getattr(self, 'test_content_widget', None):
+                self.load_passage_content()
+        except Exception as e:
+            app_logger.error(f"Error refreshing reading test resources: {e}")
 
     def on_page_loaded(self, ok: bool):
         """Called when the passage HTML finishes loading; refresh completion state and stretch content to the edges."""
@@ -721,9 +744,7 @@ class ReadingTestUI(QWidget):
                 }
             """)
             
-            # Disable subject selection during test
-            self.book_combo.setEnabled(False)
-            self.subject_combo.setEnabled(False)
+            # Fixed selection mode (no in-app switching); nothing to disable
             
             # Switch to test content if on overlay
             if self.content_stack.currentWidget() == self.protection_overlay:
@@ -771,33 +792,43 @@ class ReadingTestUI(QWidget):
         self.load_passage_content()
 
     def load_passage_content(self):
-        """Load the passage content into the web view"""
-        current_subject = self.subject_combo.currentText()
-        if not current_subject:
+        """Load the passage content into the web view (fixed book/test)."""
+        current_book = self.selected_book
+        test_num = self.selected_test
+        
+        if not current_book or test_num is None:
             return
-            
-        # Extract test number from subject text (e.g., "Test 1" -> "1")
-        test_num = current_subject.split()[-1] if current_subject else "1"
-        cambridge_book = self.book_combo.currentText()
         
-        # Map Cambridge book names to directory names
-        book_mapping = {
-            "Cambridge 20": "Cambridge20",
-            "Cambridge 19": "Cambridge19"
-        }
-        
-        book_dir = book_mapping.get(cambridge_book, "Cambridge20")
         passage_num = self.current_passage + 1
         
-        # Construct file path
-        html_file = f"resources/{book_dir}/reading/Test-{test_num}-Passage-{passage_num}.html"
-        
-        if os.path.exists(html_file):
-            # Load the HTML file
-            file_url = QUrl.fromLocalFile(os.path.abspath(html_file))
-            self.web_view.load(file_url)
-        else:
-            # Load placeholder content
+        try:
+            # Use resource manager to get the correct file path
+            resource_path = self.resource_manager.get_resource_path(
+                current_book, 'reading', int(test_num), f'passage-{passage_num}'
+            )
+            
+            if resource_path:
+                # Construct full path
+                full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), resource_path)
+                if os.path.exists(full_path):
+                    # Load the HTML file
+                    file_url = QUrl.fromLocalFile(os.path.abspath(full_path))
+                    self.web_view.load(file_url)
+                    app_logger.info(f"Loaded reading passage: {full_path}")
+                else:
+                    # Load placeholder content
+                    placeholder_html = self.create_placeholder_html(passage_num)
+                    self.web_view.setHtml(placeholder_html)
+                    app_logger.warning(f"Reading file not found: {full_path}")
+            else:
+                # Load placeholder content
+                placeholder_html = self.create_placeholder_html(passage_num)
+                self.web_view.setHtml(placeholder_html)
+                app_logger.warning(f"No reading passage found for {current_book} Test {test_num} Passage {passage_num}")
+                
+        except Exception as e:
+            app_logger.error(f"Error loading reading passage: {e}")
+            # Load placeholder content on error
             placeholder_html = self.create_placeholder_html(passage_num)
             self.web_view.setHtml(placeholder_html)
 
@@ -1081,3 +1112,176 @@ class ReadingTestUI(QWidget):
                 }
             """)
             self.content_stack.setCurrentWidget(self.protection_overlay)
+            # --- Added: collect and save answers, and show summary on time out ---
+            self.show_test_summary()
+
+    def show_test_summary(self):
+        """Show test completion summary and save answers"""
+        # Collect and save answers
+        self.collect_all_answers()
+        QMessageBox.information(self, "Test Complete", 
+                              "Your reading test has been completed.\n\n"
+                              "Your answers are being saved to results folder.")
+
+    def collect_all_answers(self):
+        """Collect answers from all three passages using JavaScript"""
+        # Initialize collection state
+        self.collected_answers = {}
+        self.passages_to_collect = [0, 1, 2]
+        self.current_collection_index = 0
+        # Start collecting from first passage
+        self.collect_next_passage()
+
+    def collect_next_passage(self):
+        """Collect answers from the next passage in sequence"""
+        if self.current_collection_index >= len(self.passages_to_collect):
+            # All passages collected, save answers
+            self.save_answers_to_file()
+            return
+        passage_index = self.passages_to_collect[self.current_collection_index]
+        # JavaScript code to collect all answers from the current page
+        js_code = r"""
+        (function() {
+            try {
+                var inputs = document.querySelectorAll('input, textarea, select, [contenteditable="true"], [data-question]');
+                var answers = {};
+                function qNum(input) {
+                    var dataQ = input.getAttribute('data-question');
+                    if (dataQ) {
+                        var m = dataQ.match(/(\d{1,2})/); if (m) return parseInt(m[1]);
+                    }
+                    var name = input.getAttribute('name');
+                    if (name) {
+                        var m = name.match(/q(\d{1,2})/i); if (m) return parseInt(m[1]);
+                        m = name.match(/(\d{1,2})/); if (m) return parseInt(m[1]);
+                    }
+                    var id = input.getAttribute('id');
+                    if (id) {
+                        var m = id.match(/q(\d{1,2})/i); if (m) return parseInt(m[1]);
+                        m = id.match(/(\d{1,2})/); if (m) return parseInt(m[1]);
+                    }
+                    var label = input.closest('label');
+                    if (label) {
+                        var t = label.textContent || ''; var m = t.match(/(\d{1,2})/); if (m) return parseInt(m[1]);
+                    }
+                    return null;
+                }
+                function getVal(input) {
+                    var tag = (input.tagName || '').toLowerCase();
+                    var type = (input.type || '').toLowerCase();
+                    if (type === 'radio' || type === 'checkbox') {
+                        if (input.checked) { return input.value || (input.nextElementSibling ? (input.nextElementSibling.innerText || input.nextElementSibling.textContent || '').trim() : ''); }
+                        return null;
+                    }
+                    if (tag === 'select') { return input.value || ''; }
+                    if (input.isContentEditable) { return (input.innerText || input.textContent || '').toString(); }
+                    return (input.value !== undefined && input.value !== null) ? String(input.value) : '';
+                }
+                inputs.forEach(function(input){
+                    var q = qNum(input); var v = getVal(input);
+                    if (q !== null && v !== null && String(v).length > 0) {
+                        if (!answers[q]) { answers[q] = []; }
+                        answers[q].push(String(v).trim());
+                    }
+                });
+                // normalize and dedupe
+                var normalized = {};
+                Object.keys(answers).forEach(function(k){
+                    var uniq = [];
+                    answers[k].forEach(function(val){ if (val && uniq.indexOf(val) === -1) uniq.push(val); });
+                    normalized[k] = uniq.join(' | ');
+                });
+                return { answers: normalized, success: true };
+            } catch (error) {
+                return { answers: {}, success: false, error: error.message };
+            }
+        })();
+        """
+        # Switch to the passage
+        self.switch_passage(passage_index)
+        # Wait for page to load, then collect answers
+        QTimer.singleShot(800, lambda: self.execute_collection_js(passage_index, js_code))
+
+    def execute_collection_js(self, passage_index, js_code):
+        """Execute JavaScript to collect answers for a passage"""
+        def handle_collection_result(result):
+            try:
+                if result and isinstance(result, dict) and result.get('success', False):
+                    var_answers = result.get('answers', {})
+                    # Filter answers to this passage range
+                    start, end = self.passage_ranges[passage_index]
+                    answers = {}
+                    for k, v in var_answers.items():
+                        try:
+                            n = int(k)
+                        except Exception:
+                            continue
+                        if n >= start and n <= end:
+                            answers[n] = v
+                    self.store_passage_answers(passage_index, answers)
+                else:
+                    error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                    app_logger.debug(f"Failed to collect answers for passage {passage_index + 1}: {error_msg}")
+                    self.store_passage_answers(passage_index, {})
+            except Exception as e:
+                app_logger.debug(f"Error processing collection result for passage {passage_index + 1}: {e}")
+                self.store_passage_answers(passage_index, {})
+        try:
+            self.web_view.page().runJavaScript(js_code, handle_collection_result)
+        except Exception as e:
+            app_logger.debug(f"JavaScript execution error on passage {passage_index + 1}: {e}")
+            self.store_passage_answers(passage_index, {})
+
+    def store_passage_answers(self, passage_index, answers):
+        """Store answers for a specific passage"""
+        self.collected_answers[f"Passage {passage_index + 1}"] = answers or {}
+        # Move to next passage
+        self.current_collection_index += 1
+        if self.current_collection_index < len(self.passages_to_collect):
+            QTimer.singleShot(200, self.collect_next_passage)
+        else:
+            # All passages collected, save
+            self.save_answers_to_file()
+
+    def save_answers_to_file(self):
+        """Save all collected answers to a text file"""
+        try:
+            results_dir = os.path.join(os.path.dirname(__file__), '..', 'results', 'reading')
+            if not os.path.exists(results_dir):
+                os.makedirs(results_dir)
+            current_time = datetime.now()
+            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+            current_test = f"Test {self.selected_test}" if getattr(self, 'selected_test', None) is not None else "Unknown_Test"
+            current_book = getattr(self, 'selected_book', None) or "Unknown_Book"
+            filename = f"Reading_Answers_{current_book.replace(' ', '_')}_{current_test.replace(' ', '_')}_{timestamp}.txt"
+            file_path = os.path.join(results_dir, filename)
+            content = []
+            content.append("=" * 60)
+            content.append("IELTS READING TEST ANSWERS")
+            content.append("=" * 60)
+            content.append(f"Test: {current_book} - {current_test}")
+            content.append(f"Date: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            content.append(f"Duration: {60 - (self.time_remaining // 60)} minutes")
+            content.append("=" * 60)
+            content.append("")
+            # Add answers per passage
+            for passage_name in ["Passage 1", "Passage 2", "Passage 3"]:
+                content.append(f"{passage_name}:")
+                content.append("-" * 20)
+                answers = getattr(self, 'collected_answers', {}).get(passage_name, {})
+                if answers:
+                    for question in sorted(answers.keys()):
+                        ans_val = answers[question]
+                        content.append(f"Question {question}: {ans_val if ans_val else '[No Answer]'}")
+                else:
+                    content.append("No answers recorded for this passage")
+                content.append("")
+            content.append("=" * 60)
+            content.append("End of Answers")
+            content.append("=" * 60)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(content))
+            QMessageBox.information(self, "Answers Saved", 
+                                  f"Your answers have been saved successfully!\n\nFile location: {file_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Error", f"Failed to save answers: {str(e)}")

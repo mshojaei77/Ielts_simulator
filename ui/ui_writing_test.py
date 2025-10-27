@@ -3,6 +3,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
+from resource_manager import get_resource_manager
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget,
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -14,10 +15,18 @@ from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 class WritingTestUI(QWidget):
-    def __init__(self):
+    def __init__(self, selected_book: str = None, selected_test: int = None):
         super().__init__()
         self.module_type = "academic"  # Always academic now
-        self.subjects = self.load_subjects()
+        
+        # Initialize resource manager
+        self.resource_manager = get_resource_manager()
+        
+        # Fixed selection context (no in-app switching)
+        self.selected_book = selected_book
+        self.selected_test = int(selected_test) if selected_test is not None else None
+        
+        self.subjects = self.load_subjects(self.selected_book)
         self.task1_time = 20 * 60  # 20 minutes in seconds
         self.task2_time = 40 * 60  # 40 minutes in seconds
         self.total_time = self.task1_time + self.task2_time  # 60 minutes total
@@ -85,39 +94,40 @@ class WritingTestUI(QWidget):
             }
         """)
 
-    def load_subjects(self, cambridge_book="Cambridge 20"):
-        # Map Cambridge book names to directory names
-        book_mapping = {
-            "Cambridge 20": "Cambridge20",
-            "Cambridge 19": "Cambridge19"
-        }
+    def load_subjects(self, cambridge_book=None):
+        if cambridge_book is None:
+            cambridge_book = getattr(self, 'selected_book', None)
         
-        book_dir = book_mapping.get(cambridge_book, "Cambridge20")
-        writing_dir = f"resources/{book_dir}/writing"
+        if not cambridge_book or cambridge_book == "No books found":
+            # Return default structure
+            return {
+                "task1_subjects": [f"Test {i}" for i in range(1, 5)],
+                "task2_subjects": [f"Test {i}" for i in range(1, 5)]
+            }
         
         task1_subjects = []
         task2_subjects = []
         
         try:
-            if os.path.exists(writing_dir):
-                # Scan for html files in the writing directory
-                for filename in os.listdir(writing_dir):
-                    if filename.endswith('.html'):
-                        # Extract test number and task from filename
-                        # Expected format: Test-X-Task-Y.html
-                        parts = filename.replace('.html', '').split('-')
-                        if len(parts) >= 4 and parts[0] == 'Test' and parts[2] == 'Task':
-                            test_num = parts[1]
-                            task_num = parts[3]
-                            
-                            if task_num == '1':
-                                task1_subjects.append(f"Test {test_num}")
-                            elif task_num == '2':
-                                task2_subjects.append(f"Test {test_num}")
-                
-                # Remove duplicates and sort
-                task1_subjects = sorted(list(set(task1_subjects)), key=lambda x: int(x.split()[-1]))
-                task2_subjects = sorted(list(set(task2_subjects)), key=lambda x: int(x.split()[-1]))
+            # Get available writing tests from resource manager
+            available_tests = self.resource_manager.get_available_test_files(cambridge_book, 'writing')
+            
+            for test_file in available_tests:
+                # Extract test number and task from filename
+                # Expected format: Test-X-Task-Y.html
+                parts = test_file.replace('.html', '').split('-')
+                if len(parts) >= 4 and parts[0] == 'Test' and parts[2] == 'Task':
+                    test_num = parts[1]
+                    task_num = parts[3]
+                    
+                    if task_num == '1':
+                        task1_subjects.append(f"Test {test_num}")
+                    elif task_num == '2':
+                        task2_subjects.append(f"Test {test_num}")
+            
+            # Remove duplicates and sort
+            task1_subjects = sorted(list(set(task1_subjects)), key=lambda x: int(x.split()[-1]))
+            task2_subjects = sorted(list(set(task2_subjects)), key=lambda x: int(x.split()[-1]))
             
             # If no files found, provide defaults
             if not task1_subjects:
@@ -139,27 +149,32 @@ class WritingTestUI(QWidget):
             }
 
     def load_task_content(self, test_name, task_num):
-        """Load task content from html file"""
+        """Load task content from html file (fixed selection)"""
         # Extract test number from test name (e.g., "Test 1" -> "1")
         test_num = test_name.split()[-1] if test_name else "1"
-        cambridge_book = self.book_combo.currentText()
+        cambridge_book = self.selected_book
         
-        # Map Cambridge book names to directory names
-        book_mapping = {
-            "Cambridge 20": "Cambridge20",
-            "Cambridge 19": "Cambridge19"
-        }
+        if not cambridge_book or cambridge_book == "No books found":
+            return self.get_default_content(task_num)
         
-        book_dir = book_mapping.get(cambridge_book, "Cambridge20")
-        filename = f"resources/{book_dir}/writing/Test-{test_num}-Task-{task_num}.html"
+        # Construct filename
+        filename = f"Test-{test_num}-Task-{task_num}.html"
         
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                content = f.read()
-            return content.strip()
-        except FileNotFoundError:
-            app_logger.debug(f"Writing content file not found: {filename}")
+            # Get file path from resource manager
+            file_path = self.resource_manager.get_resource_path(cambridge_book, 'writing', filename)
+            
+            if file_path:
+                full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), file_path)
+                if os.path.exists(full_path):
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    return content.strip()
+                else:
+                    app_logger.debug(f"Writing content file not found: {full_path}")
+            
             return self.get_default_content(task_num)
+                
         except Exception as e:
             app_logger.debug(f"Error loading writing content: {str(e)}")
             return self.get_default_content(task_num)
@@ -234,13 +249,18 @@ class WritingTestUI(QWidget):
         book_label = QLabel("Cambridge IELTS Academic Writing Test")
         book_label.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #f0f0f0;")
         
-        self.book_combo = QComboBox()
-        self.book_combo.addItems(["Cambridge 20", "Cambridge 19"])
-        self.book_combo.setMinimumWidth(120)
-        self.book_combo.currentTextChanged.connect(self.update_task_options)
-
+        # Fixed selection display (no in-app switching)
+        book_value_label = QLabel(self.selected_book or "No book selected")
+        book_value_label.setStyleSheet("font-size: 12px; background-color: #f0f0f0;")
+        
         left_layout.addWidget(book_label)
-        left_layout.addWidget(self.book_combo)
+        left_layout.addWidget(book_value_label)
+        
+        # Fixed test display
+        test_value_label = QLabel(f"Test: {self.selected_test if self.selected_test is not None else '-'}")
+        test_value_label.setStyleSheet("font-weight: bold; font-size: 12px; background-color: #f0f0f0;")
+        
+        left_layout.addWidget(test_value_label)
 
         # Center section: Task navigation tabs
         center_section = QWidget()
@@ -353,21 +373,7 @@ class WritingTestUI(QWidget):
         answer_layout.setContentsMargins(15, 15, 15, 15)
         answer_layout.setSpacing(10)
         
-        # Test selection for current task
-        selection_widget = QWidget()
-        selection_layout = QHBoxLayout(selection_widget)
-        selection_layout.setContentsMargins(0, 0, 0, 0)
-        
-        test_label = QLabel("Select test:")
-        test_label.setStyleSheet("font-weight: bold; background-color: white;")
-        
-        self.test_combo = QComboBox()
-        self.test_combo.setMinimumWidth(100)
-        self.test_combo.currentIndexChanged.connect(self.update_task_content)
-        
-        selection_layout.addWidget(test_label)
-        selection_layout.addWidget(self.test_combo)
-        selection_layout.addStretch()
+        # Test selection is now in the top bar
         
         # Answer text area
         answer_label = QLabel("Your answer:")
@@ -400,7 +406,6 @@ class WritingTestUI(QWidget):
             border-radius: 3px;
         """)
         
-        answer_layout.addWidget(selection_widget)
         answer_layout.addWidget(answer_label)
         answer_layout.addWidget(self.answer_text)
         answer_layout.addWidget(self.word_count_label)
@@ -481,40 +486,94 @@ class WritingTestUI(QWidget):
     def create_protection_overlay(self):
         """Create protection overlay shown before test starts"""
         overlay = QWidget()
-        overlay.setStyleSheet("background-color: #f0f0f0;")
+        overlay.setStyleSheet("background-color: #f8f8f8;")
         
         layout = QVBoxLayout(overlay)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(50, 50, 50, 50)
+        
+        # Main guidance card
+        card = QFrame()
+        card.setFrameStyle(QFrame.Box)
+        card.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 2px solid #e0e0e0;
+                border-radius: 10px;
+                padding: 30px;
+            }
+        """)
+        card.setMaximumWidth(650)
+        card.setMinimumHeight(600)
+        
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(20)
         
         # Title
         title = QLabel("IELTS Academic Writing Test")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50; background-color: #f0f0f0;")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c5aa0; background-color: white;")
         title.setAlignment(Qt.AlignCenter)
         
-        # Instructions
-        instructions = QLabel("""
-        <div style="text-align: center; line-height: 1.6;">
-        <h3>Test Instructions:</h3>
-        <p>• This test consists of 2 tasks</p>
-        <p>• Task 1: 20 minutes, minimum 150 words</p>
-        <p>• Task 2: 40 minutes, minimum 250 words</p>
-        <p>• Total time: 60 minutes</p>
-        <br>
-        <p><strong>Click "Start Test" to begin</strong></p>
-        </div>
-        """)
-        instructions.setStyleSheet("font-size: 14px; color: #34495e; background-color: #f0f0f0;")
-        instructions.setAlignment(Qt.AlignCenter)
+        # Test information
+        info_text = """
+        <div style="font-size: 14px; line-height: 1.6; color: #333;">
+        <p><strong>Test Duration:</strong> 60 minutes</p>
+        <p><strong>Number of Tasks:</strong> 2 writing tasks</p>
+        <p><strong>Task 1:</strong> 20 minutes, minimum 150 words</p>
+        <p><strong>Task 2:</strong> 40 minutes, minimum 250 words</p>
         
-        layout.addWidget(title)
-        layout.addWidget(instructions)
+        <hr style="margin: 20px 0; border: 1px solid #e0e0e0;">
+        
+        <p><strong>Instructions:</strong></p>
+        <ul>
+        <li>Complete both tasks within the allocated time</li>
+        <li>Task 1: Describe visual information (graph, chart, diagram)</li>
+        <li>Task 2: Write an essay in response to a point of view or argument</li>
+        <li>Use the task tabs to navigate between Task 1 and Task 2</li>
+        <li>Monitor your word count to meet minimum requirements</li>
+        <li>Review your answers before submitting</li>
+        </ul>
+        
+        <p style="margin-top: 20px;"><strong>Good luck with your test!</strong></p>
+        </div>
+        """
+        
+        info_label = QLabel(info_text)
+        info_label.setStyleSheet("background-color: white;")
+        info_label.setWordWrap(True)
+        info_label.setAlignment(Qt.AlignLeft)
+        
+        # Start button
+        start_button = QPushButton("Start Writing Test")
+        start_button.clicked.connect(self.start_actual_test)
+        start_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 12px 30px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        start_button.setMinimumHeight(50)
+        
+        card_layout.addWidget(title)
+        card_layout.addWidget(info_label)
+        card_layout.addSpacing(20)
+        card_layout.addWidget(start_button, alignment=Qt.AlignCenter)
+        
+        layout.addWidget(card, alignment=Qt.AlignCenter)
         
         return overlay
 
     def update_task_options(self):
-        """Update task options when Cambridge book changes"""
-        self.subjects = self.load_subjects(self.book_combo.currentText())
-        self.update_task_content()
+        """Deprecated in fixed selection mode: no dynamic task options"""
+        return
 
     def switch_task(self, task_index):
         """Switch between Task 1 and Task 2"""
@@ -525,13 +584,7 @@ class WritingTestUI(QWidget):
         self.task1_tab.setChecked(task_index == 0)
         self.task2_tab.setChecked(task_index == 1)
         
-        # Update test combo options
-        if task_index == 0:
-            self.test_combo.clear()
-            self.test_combo.addItems(self.subjects.get("task1_subjects", []))
-        else:
-            self.test_combo.clear()
-            self.test_combo.addItems(self.subjects.get("task2_subjects", []))
+        # Test selection is now handled at the top level
         
         # Update navigation buttons
         self.back_button.setEnabled(task_index > 0)
@@ -541,33 +594,41 @@ class WritingTestUI(QWidget):
         self.update_task_content()
         self.update_word_count()
 
+    def on_test_selection_changed(self):
+        """Deprecated in fixed selection mode: no in-app test switching"""
+        return
+
     def update_task_content(self):
-        """Update the web view with current task content"""
-        if self.test_combo.currentText():
-            task_num = self.current_task + 1
-            test_name = self.test_combo.currentText()
-            
-            # Extract test number from test name (e.g., "Test 1" -> "1")
-            test_num = test_name.split()[-1] if test_name else "1"
-            cambridge_book = self.book_combo.currentText()
-            
-            # Map Cambridge book names to directory names
-            book_mapping = {
-                "Cambridge 20": "Cambridge20",
-                "Cambridge 19": "Cambridge19"
-            }
-            
-            book_dir = book_mapping.get(cambridge_book, "Cambridge20")
-            filename = f"resources/{book_dir}/writing/Test-{test_num}-Task-{task_num}.html"
-            
-            # Check if file exists and load it directly
-            if os.path.exists(filename):
-                file_url = QUrl.fromLocalFile(os.path.abspath(filename))
-                self.web_view.load(file_url)
+        """Update the web view with current task content (fixed selection)"""
+        task_num = self.current_task + 1
+        test_num = self.selected_test if self.selected_test is not None else 1
+        cambridge_book = self.selected_book
+        try:
+            # Use resource manager to get the correct file path
+            book = self.resource_manager.get_book_by_display_name(cambridge_book)
+            if book:
+                part_or_task = f"Task-{task_num}"
+                file_path = self.resource_manager.get_resource_path(book.display_name, "writing", int(test_num), part_or_task)
+                
+                if file_path:
+                    full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), file_path)
+                    if os.path.exists(full_path):
+                        file_url = QUrl.fromLocalFile(os.path.abspath(full_path))
+                        self.web_view.load(file_url)
+                        app_logger.info(f"Loaded writing content: {full_path}")
+                        return
+                    else:
+                        app_logger.warning(f"Writing file not found: {full_path}")
+                else:
+                    app_logger.warning(f"Writing resource not found: Test {test_num} Task {task_num} for book {book.display_name}")
             else:
-                # Fallback to setHtml with default content
-                content = self.get_default_content(task_num)
-                self.web_view.setHtml(content)
+                app_logger.warning(f"Book not found: {cambridge_book}")
+                
+        except Exception as e:
+            app_logger.error(f"Error loading writing content: {e}")
+            # Fallback to setHtml with default content
+            content = self.get_default_content(task_num)
+            self.web_view.setHtml(content)
 
     def update_word_count(self):
         """Update word count display"""
@@ -654,6 +715,12 @@ class WritingTestUI(QWidget):
             self.start_test_button.setText("Start Test")
             QMessageBox.information(self, 'Test Completed', 'Your test has been completed!')
 
+    def start_actual_test(self):
+        """Start the actual test from protection overlay"""
+        # Reuse the same logic as the top-bar "Start Test" button
+        # so the countdown timer and test state start immediately.
+        self.toggle_test()
+
     def toggle_test(self):
         """Start or pause the test"""
         if not self.test_started:
@@ -738,3 +805,13 @@ class WritingTestUI(QWidget):
         msg.setText(help_text)
         msg.setTextFormat(Qt.RichText)
         msg.exec_()
+    
+    def refresh_resources(self):
+        """Refresh the UI when resources change (fixed selection)."""
+        try:
+            # Reload subjects and content using fixed selection
+            self.subjects = self.load_subjects(self.selected_book)
+            self.update_task_content()
+        except Exception as e:
+            from logger import app_logger
+            app_logger.error(f"Error refreshing writing test resources: {e}")

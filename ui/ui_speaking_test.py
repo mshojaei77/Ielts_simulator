@@ -4,6 +4,7 @@ import datetime
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
+from resource_manager import get_resource_manager
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, 
     QFrame, QComboBox, QSpacerItem, QMessageBox
@@ -79,17 +80,23 @@ class SpeakingTestUI(QWidget):
     - Voice recording (Start/Stop) with improved digital timer
     """
 
-    def __init__(self):
+    def __init__(self, selected_book: str = None, selected_test: int = None):
         super().__init__()
         self.current_part = 0  # 0=Part1, 1=Part2, 2=Part3
-        self.current_test = 1  # Default to Test 1
+        self.selected_book = selected_book
+        try:
+            self.current_test = int(selected_test) if selected_test is not None else 1
+        except Exception:
+            self.current_test = selected_test if selected_test is not None else 1
         self.total_parts = 3
         self.audio_supported = QAudioInput is not None and QAudioFormat is not None
 
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        self.speaking_dir = os.path.join(self.base_dir, 'resources', 'Cambridge20', 'speaking')
         self.recordings_dir = os.path.join(self.base_dir, 'recordings', 'speaking')
         os.makedirs(self.recordings_dir, exist_ok=True)
+        
+        # Initialize resource manager
+        self.resource_manager = get_resource_manager()
 
         # Recording state
         self.audio_input = None
@@ -100,6 +107,25 @@ class SpeakingTestUI(QWidget):
         self.record_seconds = 0
         self.dot_visible = False  # blinking indicator
 
+        # Speaking test timer state
+        self.speaking_timer = QTimer(self)
+        self.speaking_timer.setInterval(1000)
+        self.speaking_timer.timeout.connect(self.update_speaking_timer)
+        self.speaking_time_remaining = 0
+        self.speaking_timer_active = False
+        self.current_phase = "ready"  # ready, preparation, speaking, completed
+        
+        # Part-specific durations (in seconds)
+        self.part_durations = {
+            0: 300,  # Part 1: 5 minutes
+            1: 180,  # Part 2: 3 minutes total (1 min prep + 2 min speaking)
+            2: 300   # Part 3: 5 minutes
+        }
+        
+        # Part 2 specific timing
+        self.part2_prep_time = 60    # 1 minute preparation
+        self.part2_speaking_time = 120  # 2 minutes speaking
+
         # Load available tests
         self.available_tests = self.load_available_tests()
         
@@ -108,34 +134,51 @@ class SpeakingTestUI(QWidget):
         self.load_current_content()
         self.update_navigation_buttons()
         self.update_recording_ui_state()
+        
+        # Initialize timer display
+        self.update_timer_display()
+        self.update_timer_controls()
 
     def load_available_tests(self):
-        """Load available speaking tests from the directory"""
-        tests = []
+        """Load available speaking tests using the resource manager (fixed selection)"""
         try:
-            if os.path.exists(self.speaking_dir):
-                files = os.listdir(self.speaking_dir)
-                test_numbers = set()
-                for filename in files:
-                    if filename.startswith('Test-') and filename.endswith('.html'):
-                        parts = filename.split('-')
-                        if len(parts) >= 2:
-                            try:
-                                test_num = int(parts[1])
-                                test_numbers.add(test_num)
-                            except ValueError:
-                                continue
-                tests = sorted(list(test_numbers))
+            current_book = getattr(self, 'selected_book', None)
+            if current_book:
+                tests = self.resource_manager.get_available_tests(current_book, 'speaking')
+                return tests if tests else [1]
         except Exception as e:
             app_logger.debug(f"Error loading available tests: {e}")
-        
-        # If no tests found, default to Test 1
-        return tests if tests else [1]
+        return [1]
 
     def get_part_file_path(self, test_num, part_num):
-        """Get the file path for a specific test and part"""
-        filename = f"Test-{test_num}-Part-{part_num + 1}.html"
-        return os.path.join(self.speaking_dir, filename)
+        """Get the file path for a specific test and part using resource manager"""
+        try:
+            current_book = self.selected_book
+            part_or_task = f"Part-{part_num + 1}"
+            
+            # Use resource manager to get the correct file path
+            book = self.resource_manager.get_book_by_display_name(current_book)
+            if book:
+                resource_path = self.resource_manager.get_resource_path(book.display_name, 'speaking', int(test_num), part_or_task)
+                if resource_path:
+                    full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), resource_path)
+                    if os.path.exists(full_path):
+                        app_logger.info(f"Loaded speaking content: {full_path}")
+                        return full_path
+                    else:
+                        app_logger.warning(f"Speaking file not found: {full_path}")
+                else:
+                    app_logger.warning(f"Speaking resource not found: Test {test_num} Part {part_num + 1} for book {book.display_name}")
+            else:
+                app_logger.warning(f"Book not found: {current_book}")
+                
+        except Exception as e:
+            app_logger.error(f"Error getting part file path: {e}")
+        
+        # Fallback to default path structure
+        fallback_path = os.path.join("resources", "Cambridge20", "speaking", f"Test-{test_num}-Part-{part_num + 1}.html")
+        app_logger.warning(f"Using fallback path: {fallback_path}")
+        return fallback_path
 
     def apply_style(self):
         """Apply clean, minimalist styling similar to writing test"""
@@ -283,7 +326,7 @@ class SpeakingTestUI(QWidget):
         self.setLayout(main_layout)
 
     def create_top_bar(self):
-        """Create enhanced top bar with test selection and part buttons"""
+        """Create enhanced top bar with fixed book/test and part buttons"""
         self.top_bar = QWidget()
         self.top_bar.setObjectName('top_bar')
         self.top_bar.setFixedHeight(50)
@@ -291,23 +334,22 @@ class SpeakingTestUI(QWidget):
         top_layout.setContentsMargins(15, 5, 15, 5)
         top_layout.setSpacing(15)
 
-        # Left section: Test selection
+        # Left section: Fixed Book and Test display
         left_section = QWidget()
         left_layout = QHBoxLayout(left_section)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        test_label = QLabel("Cambridge IELTS Speaking Test")
-        test_label.setStyleSheet("font-weight: bold; font-size: 13px;")
-        
-        self.test_combo = QComboBox()
-        for test_num in self.available_tests:
-            self.test_combo.addItem(f"Test {test_num}")
-        self.test_combo.setCurrentText(f"Test {self.current_test}")
-        self.test_combo.currentTextChanged.connect(self.on_test_changed)
+        book_label = QLabel("Book:")
+        book_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        book_value_label = QLabel(self.selected_book if self.selected_book else "Unknown")
+        book_value_label.setStyleSheet("font-size: 12px;")
+        test_value_label = QLabel(f"Test: {self.current_test}")
+        test_value_label.setStyleSheet("font-weight: bold; font-size: 13px;")
 
-        left_layout.addWidget(test_label)
-        left_layout.addWidget(self.test_combo)
+        left_layout.addWidget(book_label)
+        left_layout.addWidget(book_value_label)
+        left_layout.addWidget(test_value_label)
 
         # Center section: Part navigation buttons
         center_section = QWidget()
@@ -370,9 +412,66 @@ class SpeakingTestUI(QWidget):
         nav_layout.setContentsMargins(15, 10, 15, 10)
         nav_layout.setSpacing(15)
 
-        # Left side: Status info
+        # Left side: Status info and timer
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(5)
+        
         self.status_label = QLabel("Ready to record. Use Start and Stop to capture your answers.")
         self.status_label.setStyleSheet("color: #666; font-style: italic;")
+        
+        # Speaking timer display
+        timer_container = QWidget()
+        timer_layout = QHBoxLayout(timer_container)
+        timer_layout.setContentsMargins(0, 0, 0, 0)
+        timer_layout.setSpacing(10)
+        
+        self.timer_label = QLabel("Timer:")
+        self.timer_label.setStyleSheet("color: #333; font-weight: bold;")
+        
+        self.countdown_display = QLabel("05:00")
+        self.countdown_display.setStyleSheet("""
+            color: #2c3e50;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: Consolas, monospace;
+            background-color: #ecf0f1;
+            padding: 5px 10px;
+            border-radius: 5px;
+            border: 2px solid #bdc3c7;
+        """)
+        
+        self.phase_label = QLabel("Ready to start")
+        self.phase_label.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 11px;")
+        
+        # Timer controls
+        self.start_timer_btn = QPushButton("Start Timer")
+        self.start_timer_btn.setObjectName('record_start')
+        self.start_timer_btn.setToolTip("Start the speaking test timer")
+        self.start_timer_btn.clicked.connect(self.start_speaking_timer)
+        
+        self.pause_timer_btn = QPushButton("Pause")
+        self.pause_timer_btn.setObjectName('secondary_button')
+        self.pause_timer_btn.setToolTip("Pause the speaking test timer")
+        self.pause_timer_btn.clicked.connect(self.pause_speaking_timer)
+        self.pause_timer_btn.setEnabled(False)
+        
+        self.reset_timer_btn = QPushButton("Reset")
+        self.reset_timer_btn.setObjectName('secondary_button')
+        self.reset_timer_btn.setToolTip("Reset the speaking test timer")
+        self.reset_timer_btn.clicked.connect(self.reset_speaking_timer)
+        
+        timer_layout.addWidget(self.timer_label)
+        timer_layout.addWidget(self.countdown_display)
+        timer_layout.addWidget(self.phase_label)
+        timer_layout.addWidget(self.start_timer_btn)
+        timer_layout.addWidget(self.pause_timer_btn)
+        timer_layout.addWidget(self.reset_timer_btn)
+        timer_layout.addStretch()
+        
+        left_layout.addWidget(self.status_label)
+        left_layout.addWidget(timer_container)
         
         # Middle: Recording controls
         record_panel = QWidget()
@@ -421,20 +520,19 @@ class SpeakingTestUI(QWidget):
         nav_buttons_layout.addWidget(self.back_button)
         nav_buttons_layout.addWidget(self.next_button)
         
-        nav_layout.addWidget(self.status_label)
+        nav_layout.addWidget(left_panel)
         nav_layout.addStretch()
         nav_layout.addWidget(record_panel)
         nav_layout.addStretch()
         nav_layout.addWidget(nav_buttons)
 
+    def on_book_changed(self, book_text):
+        """Deprecated in fixed selection mode: no in-app book switching"""
+        return
+
     def on_test_changed(self, test_text):
-        """Handle test selection change"""
-        try:
-            # Extract test number from text like "Test 1"
-            self.current_test = int(test_text.split()[-1])
-            self.load_current_content()
-        except (ValueError, IndexError):
-            app_logger.debug(f"Error parsing test number from: {test_text}")
+        """Deprecated in fixed selection mode: no in-app test switching"""
+        return
 
     def switch_to_part(self, part_index: int):
         """Switch to specified part"""
@@ -447,6 +545,9 @@ class SpeakingTestUI(QWidget):
             self.load_current_content()
             self.update_navigation_buttons()
             self.update_progress_label()
+            
+            # Reset timer for new part
+            self.reset_speaking_timer()
 
     def go_previous(self):
         """Navigate to previous part"""
@@ -685,3 +786,167 @@ class SpeakingTestUI(QWidget):
 
     def open_recordings_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.recordings_dir))
+
+    # Speaking Timer Methods
+    def start_speaking_timer(self):
+        """Start the speaking test timer for the current part"""
+        if self.current_part == 1:  # Part 2 has preparation phase
+            self.current_phase = "preparation"
+            self.speaking_time_remaining = self.part2_prep_time
+            self.phase_label.setText("Preparation Phase - Take notes")
+        else:
+            self.current_phase = "speaking"
+            self.speaking_time_remaining = self.part_durations[self.current_part]
+            self.phase_label.setText(f"Part {self.current_part + 1} - Speaking")
+        
+        self.speaking_timer_active = True
+        self.speaking_timer.start()
+        self.update_timer_display()
+        self.update_timer_controls()
+        
+        # Update status
+        if self.current_part == 1 and self.current_phase == "preparation":
+            self.status_label.setText("Preparation time started. Take notes for your 2-minute talk.")
+        else:
+            self.status_label.setText(f"Part {self.current_part + 1} timer started. Begin speaking.")
+
+    def pause_speaking_timer(self):
+        """Pause the speaking test timer"""
+        if self.speaking_timer_active:
+            self.speaking_timer.stop()
+            self.speaking_timer_active = False
+            self.phase_label.setText(f"{self.phase_label.text()} - PAUSED")
+            self.status_label.setText("Timer paused.")
+        else:
+            self.speaking_timer.start()
+            self.speaking_timer_active = True
+            phase_text = self.phase_label.text().replace(" - PAUSED", "")
+            self.phase_label.setText(phase_text)
+            self.status_label.setText("Timer resumed.")
+        
+        self.update_timer_controls()
+
+    def reset_speaking_timer(self):
+        """Reset the speaking test timer"""
+        self.speaking_timer.stop()
+        self.speaking_timer_active = False
+        self.current_phase = "ready"
+        
+        # Reset to initial time for current part
+        if self.current_part == 1:
+            self.speaking_time_remaining = self.part2_prep_time
+        else:
+            self.speaking_time_remaining = self.part_durations[self.current_part]
+        
+        self.update_timer_display()
+        self.update_timer_controls()
+        self.phase_label.setText("Ready to start")
+        self.status_label.setText("Timer reset. Ready to start.")
+
+    def update_speaking_timer(self):
+        """Update the speaking timer countdown"""
+        if self.speaking_time_remaining > 0:
+            self.speaking_time_remaining -= 1
+            self.update_timer_display()
+        else:
+            # Time's up for current phase
+            self.handle_timer_completion()
+
+    def handle_timer_completion(self):
+        """Handle timer completion for different phases"""
+        if self.current_part == 1 and self.current_phase == "preparation":
+            # Transition from preparation to speaking phase
+            self.current_phase = "speaking"
+            self.speaking_time_remaining = self.part2_speaking_time
+            self.phase_label.setText("Part 2 - Speaking (2 minutes)")
+            self.status_label.setText("Preparation time finished. Begin your 2-minute talk now.")
+            self.update_timer_display()
+        else:
+            # Speaking phase completed
+            self.speaking_timer.stop()
+            self.speaking_timer_active = False
+            self.current_phase = "completed"
+            self.phase_label.setText("Time's Up!")
+            self.status_label.setText(f"Part {self.current_part + 1} completed. Time's up!")
+            self.update_timer_controls()
+            
+            # Flash the timer display
+            self.countdown_display.setStyleSheet("""
+                color: white;
+                font-size: 18px;
+                font-weight: bold;
+                font-family: Consolas, monospace;
+                background-color: #e74c3c;
+                padding: 5px 10px;
+                border-radius: 5px;
+                border: 2px solid #c0392b;
+            """)
+
+    def update_timer_display(self):
+        """Update the visual countdown display"""
+        minutes = self.speaking_time_remaining // 60
+        seconds = self.speaking_time_remaining % 60
+        time_text = f"{minutes:02d}:{seconds:02d}"
+        
+        self.countdown_display.setText(time_text)
+        
+        # Color coding based on time remaining
+        if self.speaking_time_remaining <= 30:  # Last 30 seconds
+            color = "#e74c3c"  # Red
+            bg_color = "#fadbd8"
+            border_color = "#e74c3c"
+        elif self.speaking_time_remaining <= 60:  # Last minute
+            color = "#f39c12"  # Orange
+            bg_color = "#fef5e7"
+            border_color = "#f39c12"
+        else:
+            color = "#2c3e50"  # Normal
+            bg_color = "#ecf0f1"
+            border_color = "#bdc3c7"
+        
+        self.countdown_display.setStyleSheet(f"""
+            color: {color};
+            font-size: 18px;
+            font-weight: bold;
+            font-family: Consolas, monospace;
+            background-color: {bg_color};
+            padding: 5px 10px;
+            border-radius: 5px;
+            border: 2px solid {border_color};
+        """)
+
+    def update_timer_controls(self):
+        """Update timer control button states"""
+        if self.current_phase == "ready":
+            self.start_timer_btn.setText("Start Timer")
+            self.start_timer_btn.setEnabled(True)
+            self.pause_timer_btn.setEnabled(False)
+            self.reset_timer_btn.setEnabled(True)
+        elif self.current_phase in ["preparation", "speaking"]:
+            if self.speaking_timer_active:
+                self.start_timer_btn.setEnabled(False)
+                self.pause_timer_btn.setText("Pause")
+                self.pause_timer_btn.setEnabled(True)
+            else:
+                self.start_timer_btn.setEnabled(False)
+                self.pause_timer_btn.setText("Resume")
+                self.pause_timer_btn.setEnabled(True)
+            self.reset_timer_btn.setEnabled(True)
+        elif self.current_phase == "completed":
+            self.start_timer_btn.setEnabled(False)
+            self.pause_timer_btn.setEnabled(False)
+            self.reset_timer_btn.setEnabled(True)
+    
+    def refresh_resources(self):
+        """Refresh the UI when resources change."""
+        try:
+            # Reload available tests
+            self.load_available_tests()
+            
+            # Refresh current content if a test is loaded
+            if hasattr(self, 'current_test') and self.current_test:
+                self.load_current_content()
+                
+        except Exception as e:
+            from logger import app_logger
+            app_logger.error(f"Error refreshing speaking test resources: {e}")

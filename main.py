@@ -1,5 +1,6 @@
 import sys
 from logger import app_logger
+from resource_manager import get_resource_manager
 try:
     from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, QMessageBox
     from PyQt5.QtCore import Qt
@@ -16,6 +17,7 @@ try:
         from ui.ui_speaking_test import SpeakingTestUI
     except ImportError as e:
         app_logger.debug(f"Error importing SpeakingTestUI: {e}")
+    from ui.selection_dialog import BookTestSelectionDialog
 except ImportError as e:
     app_logger.debug(f"Error importing PyQt5 modules: {e}")
     sys.exit(1)
@@ -41,11 +43,11 @@ class IELTSTestSimulator(QMainWindow):
         header_layout.setContentsMargins(10, 0, 10, 0)
         
         # Title label
-        title_label = QLabel("Cambridge IELTS Academic Test Simulator")
+        title_label = QLabel("IELTS Academic Test Simulator")
         title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         
         # Subtitle label
-        subtitle_label = QLabel("Based on Cambridge Academic IELTS Books")
+        subtitle_label = QLabel("Based on Academic IELTS Books")
         subtitle_label.setStyleSheet("font-size: 12px; color: #666; font-style: italic;")
         
         # Navigation buttons
@@ -109,34 +111,46 @@ class IELTSTestSimulator(QMainWindow):
         # Add header to main layout
         main_layout.addWidget(header)
         
+        # Initialize resource manager and ask user for book/test once at startup
+        self.resource_manager = get_resource_manager()
+        selection_dialog = BookTestSelectionDialog(self.resource_manager, self)
+        result = selection_dialog.exec_()
+        if result != selection_dialog.Accepted or selection_dialog.selected_book is None or selection_dialog.selected_test is None:
+            QMessageBox.warning(self, "Selection Required", "Please select a book and test to start the simulator.")
+            self.close()
+            return
+        self.selected_book = selection_dialog.selected_book
+        self.selected_test = selection_dialog.selected_test
+        app_logger.info(f"Starting app with book='{self.selected_book}', test={self.selected_test}")
+        
         # Create stacked widget for different test sections
         self.test_stack = QTabWidget()
         self.test_stack.tabBar().setVisible(False)  # Hide tab bar as we're using our own buttons
         
-        # Create test section UIs
+        # Create test section UIs with fixed book/test context
         try:
-            self.listening_ui = ListeningTestUI()
+            self.listening_ui = ListeningTestUI(self.selected_book, self.selected_test)
             app_logger.debug("Successfully created ListeningTestUI")
         except Exception as e:
             app_logger.debug(f"Error creating ListeningTestUI: {e}")
             self.listening_ui = QWidget()
             
         try:
-            self.reading_ui = ReadingTestUI()
+            self.reading_ui = ReadingTestUI(self.selected_book, self.selected_test)
             app_logger.debug("Successfully created ReadingTestUI")
         except Exception as e:
             app_logger.debug(f"Error creating ReadingTestUI: {e}")
             self.reading_ui = QWidget()
             
         try:
-            self.writing_ui = WritingTestUI()
+            self.writing_ui = WritingTestUI(self.selected_book, self.selected_test)
             app_logger.debug("Successfully created WritingTestUI")
         except Exception as e:
             app_logger.debug(f"Error creating WritingTestUI: {e}")
             self.writing_ui = QWidget()
             
         try:
-            self.speaking_ui = SpeakingTestUI()
+            self.speaking_ui = SpeakingTestUI(self.selected_book, self.selected_test)
             app_logger.debug("Successfully created SpeakingTestUI")
         except Exception as e:
             app_logger.debug(f"Error creating SpeakingTestUI: {e}")
@@ -148,6 +162,9 @@ class IELTSTestSimulator(QMainWindow):
         self.test_stack.addTab(self.writing_ui, "Writing")
         self.test_stack.addTab(self.speaking_ui, "Speaking")
         
+        # Register for resource change notifications
+        self.resource_manager.add_change_callback(self.on_resources_changed)
+        
         # Add stacked widget to main layout
         main_layout.addWidget(self.test_stack)
         
@@ -156,6 +173,17 @@ class IELTSTestSimulator(QMainWindow):
         
     def switch_section(self, index):
         """Switch between test sections"""
+        # Get current section before switching
+        current_index = self.test_stack.currentIndex()
+        
+        # If leaving listening section (index 0), stop audio
+        if current_index == 0 and index != 0:
+            try:
+                if hasattr(self, 'listening_ui') and hasattr(self.listening_ui, 'stop_audio'):
+                    self.listening_ui.stop_audio()
+            except Exception as e:
+                app_logger.debug(f"Error stopping audio when leaving listening section: {e}")
+        
         self.test_stack.setCurrentIndex(index)
         
         # Update button states
@@ -197,6 +225,29 @@ Note: This simulator aims to replicate the experience of the
 official IELTS test as closely as possible.
 """
         QMessageBox.information(self, "Help", help_text)
+    
+    def on_resources_changed(self):
+        """Handle resource changes by refreshing UI components."""
+        try:
+            app_logger.info("Resources changed, refreshing UI components...")
+            
+            # Refresh each UI component if it has a refresh method
+            if hasattr(self.listening_ui, 'refresh_resources'):
+                self.listening_ui.refresh_resources()
+            
+            if hasattr(self.reading_ui, 'refresh_resources'):
+                self.reading_ui.refresh_resources()
+            
+            if hasattr(self.writing_ui, 'refresh_resources'):
+                self.writing_ui.refresh_resources()
+            
+            if hasattr(self.speaking_ui, 'refresh_resources'):
+                self.speaking_ui.refresh_resources()
+                
+            app_logger.info("UI components refreshed successfully")
+            
+        except Exception as e:
+            app_logger.error(f"Error refreshing UI components: {e}")
 
 if __name__ == "__main__":
     try:

@@ -4,6 +4,7 @@ from datetime import datetime
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import app_logger
+from resource_manager import get_resource_manager
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
                              QSplitter, QComboBox, QPushButton, QStackedWidget, 
                              QMessageBox, QFrame, QSizePolicy, QFileDialog,
@@ -15,8 +16,19 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 class ListeningTestUI(QWidget):
-    def __init__(self):
+    def __init__(self, selected_book, selected_test):
         super().__init__()
+        
+        # Initialize resource manager
+        self.resource_manager = get_resource_manager()
+        
+        # Fixed selection from startup dialog
+        self.selected_book = selected_book
+        try:
+            self.selected_test = int(selected_test)
+        except Exception:
+            self.selected_test = selected_test
+        
         self.subjects = self.load_subjects()
         self.total_time = 35 * 60  # 35 minutes in seconds
         self.time_remaining = self.total_time
@@ -199,20 +211,20 @@ class ListeningTestUI(QWidget):
         title_label = QLabel("Cambridge IELTS Academic Listening Test")
         title_label.setObjectName("top_bar_label")
         
-        # Cambridge book selection
+        # Cambridge book (fixed)
         book_label = QLabel("Book:")
         book_label.setObjectName("top_bar_label")
-        self.book_combo = QComboBox()
-        self.book_combo.addItems(["Cambridge 20", "Cambridge 19"])
-        self.book_combo.setMinimumWidth(120)
-        self.book_combo.currentTextChanged.connect(self.update_test_options)
+        self.chosen_book_label = QLabel(self.selected_book if self.selected_book else "Unknown")
+        self.chosen_book_label.setObjectName("top_bar_label")
+        self.chosen_book_label.setMinimumWidth(120)
         
-        # Test selection
+        # Test selection (fixed)
         test_label = QLabel("Test:")
         test_label.setObjectName("top_bar_label")
-        self.test_combo = QComboBox()
-        self.test_combo.setMinimumWidth(150)
-        self.test_combo.currentIndexChanged.connect(self.load_selected_test)
+        test_text = f"Test {self.selected_test}" if self.selected_test is not None else "Unknown"
+        self.chosen_test_label = QLabel(test_text)
+        self.chosen_test_label.setObjectName("top_bar_label")
+        self.chosen_test_label.setMinimumWidth(150)
         
         # Timer (center-right)
         self.timer_label = QLabel("35:00")
@@ -227,9 +239,9 @@ class ListeningTestUI(QWidget):
         top_bar_layout.addWidget(title_label)
         top_bar_layout.addStretch()
         top_bar_layout.addWidget(book_label)
-        top_bar_layout.addWidget(self.book_combo)
+        top_bar_layout.addWidget(self.chosen_book_label)
         top_bar_layout.addWidget(test_label)
-        top_bar_layout.addWidget(self.test_combo)
+        top_bar_layout.addWidget(self.chosen_test_label)
         top_bar_layout.addStretch()
         top_bar_layout.addWidget(self.timer_label)
         top_bar_layout.addWidget(self.start_test_button)
@@ -286,7 +298,7 @@ class ListeningTestUI(QWidget):
         main_layout.addWidget(navigation_widget)
 
         # Initialize test options
-        self.update_test_options()
+        # Fixed selection mode: no dynamic test options
 
     def create_protection_overlay(self):
         """Create the protection overlay with IELTS guidance card and audio test"""
@@ -445,51 +457,72 @@ class ListeningTestUI(QWidget):
         return overlay
 
     def load_subjects(self):
-        """Load test subjects from JSON file"""
+        """Load test subjects dynamically from resource manager"""
         try:
-            subjects_file = os.path.join(os.path.dirname(__file__), '..', 'resources', 'subjects.json')
-            if os.path.exists(subjects_file):
-                with open(subjects_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            listening_structure = {"listening": {}}
+            
+            # Get all available books
+            available_books = self.resource_manager.get_available_books()
+            
+            for book in available_books:
+                # Get available listening tests for this book
+                available_tests = self.resource_manager.get_available_test_files(book, 'listening')
+                
+                # Extract test numbers from filenames
+                test_numbers = set()
+                for test_file in available_tests:
+                    if test_file.startswith("Test-") and test_file.endswith(".html"):
+                        parts = test_file.split("-")
+                        if len(parts) >= 2:
+                            test_num = parts[1]
+                            test_numbers.add(test_num)
+                
+                # Create test structure for this book
+                book_tests = {}
+                for test_num in sorted(test_numbers):
+                    book_tests[f"Test {test_num}"] = {"sections": 4, "questions": 40}
+                
+                if book_tests:
+                    listening_structure["listening"][book] = book_tests
+            
+            # If no tests found, provide defaults
+            if not listening_structure["listening"]:
+                listening_structure = {
+                    "listening": {
+                        "Cambridge 20": {
+                            "Test 1": {"sections": 4, "questions": 40},
+                            "Test 2": {"sections": 4, "questions": 40},
+                            "Test 3": {"sections": 4, "questions": 40},
+                            "Test 4": {"sections": 4, "questions": 40}
+                        }
+                    }
+                }
+            
+            return listening_structure
+            
         except Exception as e:
             app_logger.debug(f"Error loading subjects: {e}")
-        
-        # Return default structure if file doesn't exist
-        return {
-            "listening": {
-                "Cambridge 20": {
-                    "Test 1": {"sections": 4, "questions": 40},
-                    "Test 2": {"sections": 4, "questions": 40},
-                    "Test 3": {"sections": 4, "questions": 40},
-                    "Test 4": {"sections": 4, "questions": 40}
-                },
-                "Cambridge 19": {
-                    "Test 1": {"sections": 4, "questions": 40},
-                    "Test 2": {"sections": 4, "questions": 40},
-                    "Test 3": {"sections": 4, "questions": 40},
-                    "Test 4": {"sections": 4, "questions": 40}
+            # Return default structure
+            return {
+                "listening": {
+                    "Cambridge 20": {
+                        "Test 1": {"sections": 4, "questions": 40},
+                        "Test 2": {"sections": 4, "questions": 40},
+                        "Test 3": {"sections": 4, "questions": 40},
+                        "Test 4": {"sections": 4, "questions": 40}
+                    }
                 }
             }
-        }
 
     def update_test_options(self):
-        """Update test options based on selected Cambridge book"""
-        selected_book = self.book_combo.currentText()
-        self.test_combo.clear()
-        
-        if selected_book in self.subjects.get("listening", {}):
-            tests = list(self.subjects["listening"][selected_book].keys())
-            self.test_combo.addItems(tests)
+        """Deprecated in fixed selection mode: no dynamic test options"""
+        return
 
     def load_selected_test(self):
-        """Load the selected test and display first section"""
-        if self.test_combo.currentText():
-            # Load HTML for first section
-            self.load_html_for_section(0)
-            # Load audio for first section
-            self.load_audio_for_section(0)
-
-            self.current_section = 0
+        """Deprecated in fixed selection mode: loads first section using fixed selection"""
+        self.current_section = 0
+        self.load_html_for_section(0)
+        self.load_audio_for_section(0)
 
     def load_html_for_section(self, section_index):
         """Load HTML file for specific section"""
@@ -497,46 +530,40 @@ class ListeningTestUI(QWidget):
             # Validate section index
             if not (0 <= section_index <= 3):
                 raise ValueError(f"Invalid section index: {section_index}. Must be 0-3.")
-            
-            # Get current test selection
-            current_test = self.test_combo.currentText()
-            current_book = self.book_combo.currentText()
-            if not current_test or not current_book:
+
+            # Use fixed selection from startup
+            current_book = self.selected_book
+            test_number = self.selected_test
+            if not current_book or test_number is None:
                 raise ValueError("No test or book selected")
-            
-            # Extract test number (e.g., "Test 1" -> "1")
-            test_number = current_test.split()[-1]
-            
-            # Convert book name to folder name (e.g., "Cambridge 20" -> "Cambridge20")
-            book_folder = current_book.replace(" ", "")
-            
-            # Construct HTML file path
-            html_file = f"Test-{test_number}-Part-{section_index + 1}.html"
-            html_path = os.path.join(
-                os.path.dirname(__file__), 
-                '..', 
-                'resources', 
-                book_folder, 
-                'listening', 
-                html_file
+
+            # Use resource manager to get the correct file path
+            resource_path = self.resource_manager.get_resource_path(
+                current_book, 'listening', int(test_number), f'part-{section_index + 1}'
             )
             
-            # Validate file exists and is readable
-            if not os.path.exists(html_path):
-                raise FileNotFoundError(f"HTML file not found: {html_path}")
+            if not resource_path:
+                raise FileNotFoundError(f"HTML file not found for {current_book} Test {test_number} Part {section_index + 1}")
             
-            if not os.path.isfile(html_path):
-                raise ValueError(f"Path is not a file: {html_path}")
+            # Construct full path
+            full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), resource_path)
+            
+            # Validate file exists and is readable
+            if not os.path.exists(full_path):
+                raise FileNotFoundError(f"HTML file not found: {full_path}")
+            
+            if not os.path.isfile(full_path):
+                raise ValueError(f"Path is not a file: {full_path}")
             
             # Check file size (prevent loading extremely large files)
-            file_size = os.path.getsize(html_path)
+            file_size = os.path.getsize(full_path)
             if file_size > 10 * 1024 * 1024:  # 10MB limit
                 raise ValueError(f"HTML file too large: {file_size} bytes")
             
             # Load HTML file into web view
-            file_url = QUrl.fromLocalFile(os.path.abspath(html_path))
+            file_url = QUrl.fromLocalFile(os.path.abspath(full_path))
             self.web_view.load(file_url)
-            app_logger.debug(f"Loaded HTML: {html_path}")
+            app_logger.info(f"Loaded HTML: {full_path}")
             
         except (FileNotFoundError, ValueError, OSError) as e:
             app_logger.debug(f"Error loading HTML for section {section_index + 1}: {e}")
@@ -597,32 +624,38 @@ class ListeningTestUI(QWidget):
             if not (0 <= section_index <= 3):
                 raise ValueError(f"Invalid section index: {section_index}. Must be 0-3.")
             
-            # Get current test selection
-            current_test = self.test_combo.currentText()
-            current_book = self.book_combo.currentText()
-            if not current_test or not current_book:
+            # Use fixed selection from startup
+            current_book = self.selected_book
+            test_number = self.selected_test
+            if not current_book or test_number is None:
                 raise ValueError("No test or book selected")
             
-            # Extract test number (e.g., "Test 1" -> "1")
-            test_number = current_test.split()[-1]
+            # Use resource manager to get audio files for this test
+            audio_files = self.resource_manager.get_audio_files(current_book, 'listening', int(test_number))
             
-            # Convert book name to folder name (e.g., "Cambridge 20" -> "Cambridge20")
-            book_folder = current_book.replace(" ", "")
+            # Find the audio file for this specific part
+            audio_path = None
+            part_identifier = f"part-{section_index + 1}"
             
-            # Construct audio file path based on actual file structure
-            audio_file = f"Test-{test_number}-Part-{section_index + 1}.mp3"
-            audio_path = os.path.join(
-                os.path.dirname(__file__), 
-                '..', 
-                'resources', 
-                book_folder, 
-                'listening', 
-                audio_file
-            )
+            for audio_file in audio_files:
+                if part_identifier in audio_file.lower() or f"part{section_index + 1}" in audio_file.lower():
+                    # Construct full path
+                    audio_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), audio_file)
+                    break
+            
+            # If no specific part file found, try generic naming
+            if not audio_path:
+                generic_path = self.resource_manager.get_resource_path(
+                    current_book, 'listening', int(test_number), f'part-{section_index + 1}'
+                )
+                if generic_path:
+                    audio_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), generic_path)
+                    if not os.path.exists(audio_path):
+                        audio_path = None
             
             # Validate file exists and is readable
-            if not os.path.exists(audio_path):
-                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            if not audio_path or not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found for {current_book} Test {test_number} Part {section_index + 1}")
             
             if not os.path.isfile(audio_path):
                 raise ValueError(f"Path is not a file: {audio_path}")
@@ -683,9 +716,12 @@ class ListeningTestUI(QWidget):
             self.switch_section(self.current_section - 1)
 
     def go_to_next_section(self):
-        """Navigate to the next section"""
+        """Navigate to the next section or finish on the last section"""
         if self.current_section < 3:
             self.switch_section(self.current_section + 1)
+        else:
+            # On last section, trigger finish flow
+            self.finish_test()
 
     def update_navigation_buttons(self):
         """Update the state of navigation buttons"""
@@ -713,14 +749,24 @@ class ListeningTestUI(QWidget):
                 app_logger.debug("Warning: back_button not found or is None")
             
             if hasattr(self, 'next_button') and self.next_button is not None:
-                # Enable next button only if not on last section
-                self.next_button.setEnabled(self.current_section < 3)
+                # Always enable next/finish button; change behavior on last section
+                try:
+                    # Avoid duplicate connections
+                    self.next_button.clicked.disconnect()
+                except Exception:
+                    pass
                 
-                # Update button text to be more descriptive
                 if self.current_section < 3:
+                    self.next_button.setEnabled(True)
+                    self.next_button.setText("Next →")
                     self.next_button.setToolTip(f"Go to Section {self.current_section + 2}")
+                    self.next_button.clicked.connect(self.go_to_next_section)
                 else:
-                    self.next_button.setToolTip("No next section")
+                    # Last section: turn Next into Finish Test
+                    self.next_button.setEnabled(True)
+                    self.next_button.setText("Finish Test")
+                    self.next_button.setToolTip("Finish test and save your answers")
+                    self.next_button.clicked.connect(self.finish_test)
             else:
                 app_logger.debug("Warning: next_button not found or is None")
                 
@@ -735,6 +781,24 @@ class ListeningTestUI(QWidget):
                 self.back_button.setEnabled(False)
             if hasattr(self, 'next_button') and self.next_button is not None:
                 self.next_button.setEnabled(False)
+
+    def finish_test(self):
+        """Finish the listening test from navigation (last section)."""
+        try:
+            if not getattr(self, 'test_started', False):
+                QMessageBox.information(self, "Test Not Started", 
+                                        "Please start the test to finish and save your answers.")
+                return
+            # Stop any playing audio
+            try:
+                if hasattr(self, 'media_player') and self.media_player.state() == QMediaPlayer.PlayingState:
+                    self.media_player.stop()
+            except Exception:
+                pass
+            # Reuse existing end-test flow (confirmation + summary + save)
+            self.toggle_test()
+        except Exception as e:
+            app_logger.debug(f"Error finishing test: {e}")
 
 
 
@@ -815,6 +879,16 @@ class ListeningTestUI(QWidget):
             except Exception as e:
                 app_logger.debug(f"Error cleaning up temp audio file: {e}")
     
+    def stop_audio(self):
+        """Stop audio playback when navigating away from listening section"""
+        try:
+            if self.media_player.state() == QMediaPlayer.PlayingState:
+                self.media_player.stop()
+                self.is_playing = False
+                app_logger.debug("Audio stopped due to section navigation")
+        except Exception as e:
+            app_logger.debug(f"Error stopping audio: {e}")
+    
     def start_actual_test(self):
         """Start the actual test by hiding overlay and showing web view"""
         # Switch to web view
@@ -840,12 +914,8 @@ class ListeningTestUI(QWidget):
                 }
             """)
             
-
-            
-            # Load the first test
-            self.load_selected_test()
-            
-            # Load audio for first section
+            # Load the first section (fixed selection)
+            self.load_html_for_section(0)
             self.load_audio_for_section(0)
             
             # Auto-play audio (simulate real IELTS exam)
@@ -1122,12 +1192,6 @@ class ListeningTestUI(QWidget):
             except Exception as e:
                 app_logger.debug(f"Error processing collection result for section {section_index + 1}: {e}")
                 self.store_section_answers(section_index, {})
-        
-        try:
-            self.web_view.page().runJavaScript(js_code, handle_collection_result)
-        except Exception as e:
-            app_logger.debug(f"Failed to execute collection JavaScript for section {section_index + 1}: {e}")
-            self.store_section_answers(section_index, {})
     
     def store_section_answers(self, section_index, answers):
         """Store answers for a specific section"""
@@ -1156,8 +1220,8 @@ class ListeningTestUI(QWidget):
             # Generate filename with timestamp
             current_time = datetime.now()
             timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-            current_test = self.test_combo.currentText() or "Unknown_Test"
-            current_book = self.book_combo.currentText() or "Unknown_Book"
+            current_test = f"Test {self.selected_test}" if getattr(self, 'selected_test', None) is not None else "Unknown_Test"
+            current_book = getattr(self, 'selected_book', None) or "Unknown_Book"
             
             filename = f"Listening_Answers_{current_book.replace(' ', '_')}_{current_test.replace(' ', '_')}_{timestamp}.txt"
             file_path = os.path.join(ielts_practice_path, filename)
@@ -1239,3 +1303,19 @@ class ListeningTestUI(QWidget):
         else:
             self.review_timer.stop()
             self.in_review_mode = False
+    
+    def refresh_resources(self):
+        """Refresh UI when resources change (fixed selection)."""
+        try:
+            # Reload subjects data if needed
+            self.subjects = self.load_subjects()
+            
+            # Reload current section using fixed book/test selection
+            section_idx = self.current_section if hasattr(self, 'current_section') else 0
+            self.load_html_for_section(section_idx)
+            self.load_audio_for_section(section_idx)
+            
+            app_logger.info("ListeningTestUI resources refreshed successfully (fixed selection)")
+        except Exception as e:
+            app_logger.error(f"Error refreshing ListeningTestUI resources: {e}")
+            QMessageBox.warning(self, "Resource Refresh Error", f"Failed to refresh resources: {str(e)}")
