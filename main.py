@@ -18,6 +18,10 @@ try:
     except ImportError as e:
         app_logger.debug(f"Error importing SpeakingTestUI: {e}")
     from ui.selection_dialog import BookTestSelectionDialog
+    try:
+        from ui.ui_admin_panel import AdminPanelUI
+    except ImportError as e:
+        app_logger.debug(f"Error importing AdminPanelUI: {e}")
 except ImportError as e:
     app_logger.debug(f"Error importing PyQt5 modules: {e}")
     sys.exit(1)
@@ -98,6 +102,24 @@ class IELTSTestSimulator(QMainWindow):
             }
         """)
         
+        # Admin panel button
+        admin_btn = QPushButton("Admin")
+        admin_btn.clicked.connect(self.open_admin_panel)
+        admin_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                padding: 4px 8px;
+                border-radius: 2px;
+                font-size: 11px;
+                color: #495057;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+                border-color: #adb5bd;
+            }
+        """)
+        
         # Add widgets to header layout
         header_layout.addWidget(title_label)
         header_layout.addStretch()
@@ -106,6 +128,7 @@ class IELTSTestSimulator(QMainWindow):
         header_layout.addWidget(self.writing_btn)
         header_layout.addWidget(self.speaking_btn)
         header_layout.addStretch()
+        header_layout.addWidget(admin_btn)
         header_layout.addWidget(help_btn)
         
         # Add header to main layout
@@ -164,6 +187,9 @@ class IELTSTestSimulator(QMainWindow):
         
         # Register for resource change notifications
         self.resource_manager.add_change_callback(self.on_resources_changed)
+        
+        # Initialize admin panel reference
+        self.admin_panel = None
         
         # Add stacked widget to main layout
         main_layout.addWidget(self.test_stack)
@@ -225,6 +251,18 @@ Note: This simulator aims to replicate the experience of the
 official IELTS test as closely as possible.
 """
         QMessageBox.information(self, "Help", help_text)
+    
+    def open_admin_panel(self):
+        """Open the admin panel in a new window"""
+        try:
+            if not hasattr(self, 'admin_panel') or self.admin_panel is None:
+                self.admin_panel = AdminPanelUI()
+            self.admin_panel.show()
+            self.admin_panel.raise_()
+            self.admin_panel.activateWindow()
+        except Exception as e:
+            app_logger.error(f"Error opening admin panel: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open admin panel: {str(e)}")
     
     def on_resources_changed(self):
         """Handle resource changes by refreshing UI components."""

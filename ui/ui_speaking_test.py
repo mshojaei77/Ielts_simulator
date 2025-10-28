@@ -126,6 +126,9 @@ class SpeakingTestUI(QWidget):
         self.part2_prep_time = 60    # 1 minute preparation
         self.part2_speaking_time = 120  # 2 minutes speaking
 
+        # Track recordings for each part
+        self.part_recordings = {}  # {part_number: [list_of_recording_paths]}
+
         # Load available tests
         self.available_tests = self.load_available_tests()
         
@@ -307,23 +310,120 @@ class SpeakingTestUI(QWidget):
 
     def init_ui(self):
         """Initialize the enhanced user interface"""
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        try:
+            app_logger.info("Initializing speaking test UI")
+            
+            # Create main layout with error handling
+            try:
+                main_layout = QVBoxLayout(self)
+                main_layout.setContentsMargins(0, 0, 0, 0)
+                main_layout.setSpacing(0)
+                app_logger.debug("Main layout created successfully")
+            except Exception as layout_error:
+                app_logger.error(f"Failed to create main layout: {layout_error}", exc_info=True)
+                raise RuntimeError(f"UI initialization failed: {layout_error}")
 
-        # Top bar with test selection and part navigation
-        self.create_top_bar()
-        main_layout.addWidget(self.top_bar)
+            # Top bar with test selection and part navigation
+            try:
+                self.create_top_bar()
+                if hasattr(self, 'top_bar') and self.top_bar is not None:
+                    main_layout.addWidget(self.top_bar)
+                    app_logger.debug("Top bar created and added successfully")
+                else:
+                    app_logger.error("Top bar creation failed - top_bar attribute not set")
+                    raise RuntimeError("Top bar creation failed")
+            except Exception as top_bar_error:
+                app_logger.error(f"Failed to create top bar: {top_bar_error}", exc_info=True)
+                # Try to create a minimal top bar as fallback
+                try:
+                    fallback_top_bar = QWidget()
+                    fallback_top_bar.setFixedHeight(50)
+                    fallback_layout = QHBoxLayout(fallback_top_bar)
+                    fallback_label = QLabel(f"Speaking Test - {self.selected_book or 'Unknown'} - Test {self.current_test}")
+                    fallback_layout.addWidget(fallback_label)
+                    main_layout.addWidget(fallback_top_bar)
+                    app_logger.warning("Using fallback top bar due to creation error")
+                except Exception as fallback_error:
+                    app_logger.error(f"Fallback top bar creation also failed: {fallback_error}", exc_info=True)
+                    # Continue without top bar
 
-        # Content area
-        self.create_content_area()
-        main_layout.addWidget(self.content_frame, 1)
+            # Content area
+            try:
+                self.create_content_area()
+                if hasattr(self, 'content_frame') and self.content_frame is not None:
+                    main_layout.addWidget(self.content_frame, 1)
+                    app_logger.debug("Content area created and added successfully")
+                else:
+                    app_logger.error("Content area creation failed - content_frame attribute not set")
+                    raise RuntimeError("Content area creation failed")
+            except Exception as content_error:
+                app_logger.error(f"Failed to create content area: {content_error}", exc_info=True)
+                # Try to create a minimal content area as fallback
+                try:
+                    fallback_content = QWidget()
+                    fallback_content.setStyleSheet("background-color: #ffffff;")
+                    fallback_layout = QVBoxLayout(fallback_content)
+                    fallback_label = QLabel("Content area failed to load. Please restart the application.")
+                    fallback_label.setAlignment(Qt.AlignCenter)
+                    fallback_layout.addWidget(fallback_label)
+                    main_layout.addWidget(fallback_content, 1)
+                    app_logger.warning("Using fallback content area due to creation error")
+                except Exception as fallback_error:
+                    app_logger.error(f"Fallback content area creation also failed: {fallback_error}", exc_info=True)
+                    raise RuntimeError(f"Critical UI component creation failed: {content_error}")
 
-        # Navigation area
-        self.create_navigation_area()
-        main_layout.addWidget(self.nav_area)
+            # Navigation area
+            try:
+                self.create_navigation_area()
+                if hasattr(self, 'nav_area') and self.nav_area is not None:
+                    main_layout.addWidget(self.nav_area)
+                    app_logger.debug("Navigation area created and added successfully")
+                else:
+                    app_logger.error("Navigation area creation failed - nav_area attribute not set")
+                    raise RuntimeError("Navigation area creation failed")
+            except Exception as nav_error:
+                app_logger.error(f"Failed to create navigation area: {nav_error}", exc_info=True)
+                # Try to create a minimal navigation area as fallback
+                try:
+                    fallback_nav = QWidget()
+                    fallback_nav.setFixedHeight(80)
+                    fallback_layout = QHBoxLayout(fallback_nav)
+                    fallback_label = QLabel("Navigation controls failed to load")
+                    fallback_layout.addWidget(fallback_label)
+                    main_layout.addWidget(fallback_nav)
+                    app_logger.warning("Using fallback navigation area due to creation error")
+                except Exception as fallback_error:
+                    app_logger.error(f"Fallback navigation area creation also failed: {fallback_error}", exc_info=True)
+                    # Continue without navigation area
 
-        self.setLayout(main_layout)
+            # Set layout with error handling
+            try:
+                self.setLayout(main_layout)
+                app_logger.info("Speaking test UI initialized successfully")
+            except Exception as set_layout_error:
+                app_logger.error(f"Failed to set main layout: {set_layout_error}", exc_info=True)
+                raise RuntimeError(f"Failed to finalize UI layout: {set_layout_error}")
+                
+        except RuntimeError as e:
+            app_logger.error(f"Critical error in UI initialization: {e}", exc_info=True)
+            QMessageBox.critical(self, "UI Initialization Error", 
+                               f"Failed to initialize speaking test interface:\n{e}")
+            raise
+        except Exception as e:
+            app_logger.error(f"Unexpected error in UI initialization: {e}", exc_info=True)
+            QMessageBox.warning(self, "UI Warning", 
+                              f"Speaking test interface loaded with issues:\n{e}\n\nSome features may not work properly.")
+            # Try to set a minimal layout if none was set
+            try:
+                if self.layout() is None:
+                    minimal_layout = QVBoxLayout(self)
+                    minimal_label = QLabel("Speaking Test - Minimal Mode")
+                    minimal_label.setAlignment(Qt.AlignCenter)
+                    minimal_layout.addWidget(minimal_label)
+                    self.setLayout(minimal_layout)
+                    app_logger.warning("Set minimal layout as emergency fallback")
+            except Exception as minimal_error:
+                app_logger.error(f"Even minimal layout failed: {minimal_error}", exc_info=True)
 
     def create_top_bar(self):
         """Create enhanced top bar with fixed book/test and part buttons"""
@@ -517,9 +617,28 @@ class SpeakingTestUI(QWidget):
         self.next_button.setObjectName('nav_button')
         self.next_button.clicked.connect(self.go_next)
         
+        # Add Finish Test button
+        self.finish_button = QPushButton("Finish Test")
+        self.finish_button.setObjectName('nav_button')
+        self.finish_button.clicked.connect(self.finish_test)
+        self.finish_button.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: 1px solid #c0392b;
+                padding: 8px 16px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        
         nav_buttons_layout.addWidget(self.back_button)
         nav_buttons_layout.addWidget(self.next_button)
-        
+        nav_buttons_layout.addWidget(self.finish_button)
+
         nav_layout.addWidget(left_panel)
         nav_layout.addStretch()
         nav_layout.addWidget(record_panel)
@@ -724,65 +843,289 @@ class SpeakingTestUI(QWidget):
         return os.path.join(self.recordings_dir, filename)
 
     def start_recording(self):
-        if not self.audio_supported:
-            QMessageBox.warning(self, "Recording Unavailable", "QtMultimedia is not available. Please install PyQt5 with QtMultimedia support.")
-            return
-        if self.audio_input is not None:
-            return  # already recording
-
-        fmt = self.get_default_audio_format()
-        if fmt is None:
-            QMessageBox.warning(self, "No Input Device", "No audio input device found.")
-            return
-
-        path = self.generate_recording_path()
-        self.wave_writer = WavFileWriter(path, fmt.sampleRate(), fmt.channelCount(), fmt.sampleSize())
-        if not self.wave_writer.open():
-            QMessageBox.critical(self, "File Error", f"Cannot open file for writing: {path}")
-            self.wave_writer = None
-            return
-
         try:
-            # Create audio input and start streaming to QFile within WavFileWriter
-            self.audio_input = QAudioInput(fmt, self)
-            self.audio_input.start(self.wave_writer.file)
-        except Exception as e:
-            QMessageBox.critical(self, "Recording Error", f"Failed to start recording: {e}")
-            self.wave_writer.file.close()
-            self.wave_writer = None
-            self.audio_input = None
-            return
+            app_logger.info("Attempting to start audio recording")
+            
+            # Check audio support
+            if not self.audio_supported:
+                app_logger.warning("Audio recording not supported - QtMultimedia unavailable")
+                QMessageBox.warning(self, "Recording Unavailable", "QtMultimedia is not available. Please install PyQt5 with QtMultimedia support.")
+                return
+            
+            # Check if already recording
+            if self.audio_input is not None:
+                app_logger.debug("Recording already in progress, ignoring start request")
+                return  # already recording
 
-        self.record_seconds = 0
-        self.dot_visible = True
-        self.recording_label.setText("<span style='color:#E74C3C'>●</span> 00:00:00")
-        self.record_timer.start()
-        self.update_recording_ui_state()
+            # Get audio format with error handling
+            try:
+                fmt = self.get_default_audio_format()
+                if fmt is None:
+                    app_logger.error("No audio input device found")
+                    QMessageBox.warning(self, "No Input Device", "No audio input device found.")
+                    return
+                app_logger.debug(f"Audio format obtained: {fmt.sampleRate()}Hz, {fmt.channelCount()} channels")
+            except Exception as format_error:
+                app_logger.error(f"Failed to get audio format: {format_error}", exc_info=True)
+                QMessageBox.critical(self, "Audio Format Error", f"Failed to configure audio format: {format_error}")
+                return
+
+            # Generate recording path with error handling
+            try:
+                path = self.generate_recording_path()
+                if not path:
+                    raise ValueError("Generated path is empty")
+                app_logger.debug(f"Recording path generated: {path}")
+            except Exception as path_error:
+                app_logger.error(f"Failed to generate recording path: {path_error}", exc_info=True)
+                QMessageBox.critical(self, "Path Error", f"Failed to generate recording path: {path_error}")
+                return
+
+            # Initialize wave writer with error handling
+            try:
+                self.wave_writer = WavFileWriter(path, fmt.sampleRate(), fmt.channelCount(), fmt.sampleSize())
+                if not self.wave_writer.open():
+                    app_logger.error(f"Failed to open wave file for writing: {path}")
+                    QMessageBox.critical(self, "File Error", f"Cannot open file for writing: {path}")
+                    self.wave_writer = None
+                    return
+                app_logger.debug("Wave writer initialized successfully")
+            except Exception as writer_error:
+                app_logger.error(f"Failed to initialize wave writer: {writer_error}", exc_info=True)
+                QMessageBox.critical(self, "Writer Error", f"Failed to initialize audio writer: {writer_error}")
+                self.wave_writer = None
+                return
+
+            # Start audio input with comprehensive error handling
+            try:
+                # Create audio input
+                try:
+                    self.audio_input = QAudioInput(fmt, self)
+                    app_logger.debug("Audio input created successfully")
+                except Exception as input_create_error:
+                    app_logger.error(f"Failed to create audio input: {input_create_error}", exc_info=True)
+                    raise RuntimeError(f"Audio input creation failed: {input_create_error}")
+                
+                # Start streaming
+                try:
+                    self.audio_input.start(self.wave_writer.file)
+                    app_logger.debug("Audio streaming started successfully")
+                except Exception as stream_error:
+                    app_logger.error(f"Failed to start audio streaming: {stream_error}", exc_info=True)
+                    raise RuntimeError(f"Audio streaming failed: {stream_error}")
+                    
+            except Exception as audio_error:
+                app_logger.error(f"Failed to start audio recording: {audio_error}", exc_info=True)
+                QMessageBox.critical(self, "Recording Error", f"Failed to start recording: {audio_error}")
+                
+                # Cleanup on failure
+                try:
+                    if hasattr(self, 'wave_writer') and self.wave_writer is not None:
+                        if hasattr(self.wave_writer, 'file') and self.wave_writer.file is not None:
+                            self.wave_writer.file.close()
+                        self.wave_writer = None
+                    if hasattr(self, 'audio_input') and self.audio_input is not None:
+                        self.audio_input = None
+                    app_logger.debug("Cleanup completed after recording start failure")
+                except Exception as cleanup_error:
+                    app_logger.error(f"Failed to cleanup after recording error: {cleanup_error}", exc_info=True)
+                return
+
+            # Initialize recording state with error handling
+            try:
+                self.record_seconds = 0
+                self.dot_visible = True
+                
+                # Update recording label
+                try:
+                    if hasattr(self, 'recording_label') and self.recording_label is not None:
+                        self.recording_label.setText("<span style='color:#E74C3C'>●</span> 00:00:00")
+                        app_logger.debug("Recording label updated")
+                    else:
+                        app_logger.warning("Recording label not available")
+                except Exception as label_error:
+                    app_logger.warning(f"Failed to update recording label: {label_error}")
+                
+                # Start recording timer
+                try:
+                    if hasattr(self, 'record_timer') and self.record_timer is not None:
+                        self.record_timer.start()
+                        app_logger.debug("Recording timer started")
+                    else:
+                        app_logger.warning("Recording timer not available")
+                except Exception as timer_error:
+                    app_logger.warning(f"Failed to start recording timer: {timer_error}")
+                
+                # Update UI state
+                try:
+                    self.update_recording_ui_state()
+                    app_logger.debug("Recording UI state updated")
+                except Exception as ui_error:
+                    app_logger.warning(f"Failed to update recording UI state: {ui_error}")
+                
+                app_logger.info("Audio recording started successfully")
+                
+            except Exception as state_error:
+                app_logger.error(f"Failed to initialize recording state: {state_error}", exc_info=True)
+                # Try to stop the recording that was started
+                try:
+                    if self.audio_input is not None:
+                        self.audio_input.stop()
+                        self.audio_input = None
+                    if self.wave_writer is not None:
+                        if hasattr(self.wave_writer, 'file') and self.wave_writer.file is not None:
+                            self.wave_writer.file.close()
+                        self.wave_writer = None
+                except Exception as stop_error:
+                    app_logger.error(f"Failed to stop recording after state error: {stop_error}", exc_info=True)
+                
+                QMessageBox.warning(self, "Recording State Error", 
+                                  f"Recording started but state initialization failed: {state_error}")
+                
+        except Exception as e:
+            app_logger.error(f"Critical error in start_recording: {e}", exc_info=True)
+            QMessageBox.critical(self, "Critical Recording Error", 
+                               f"Unexpected error starting recording: {e}")
+            # Ensure cleanup
+            try:
+                self.audio_input = None
+                self.wave_writer = None
+            except:
+                pass
 
     def stop_recording(self):
-        if self.audio_input is None:
-            return
         try:
-            self.audio_input.stop()
-        except Exception as e:
-            QMessageBox.warning(self, "Stop Error", f"Failed to stop: {e}")
-        finally:
-            self.record_timer.stop()
-            # Finalize WAV header
+            app_logger.info("Attempting to stop audio recording")
+            
+            # Check if recording is active
+            if self.audio_input is None:
+                app_logger.debug("No active recording to stop")
+                return
+            
+            # Stop audio input with error handling
+            try:
+                self.audio_input.stop()
+                app_logger.debug("Audio input stopped successfully")
+            except Exception as stop_error:
+                app_logger.error(f"Failed to stop audio input: {stop_error}", exc_info=True)
+                QMessageBox.warning(self, "Stop Error", f"Failed to stop audio input: {stop_error}")
+                # Continue with cleanup even if stop failed
+            
+            # Stop recording timer with error handling
+            try:
+                if hasattr(self, 'record_timer') and self.record_timer is not None:
+                    self.record_timer.stop()
+                    app_logger.debug("Recording timer stopped")
+                else:
+                    app_logger.warning("Recording timer not available for stopping")
+            except Exception as timer_error:
+                app_logger.warning(f"Failed to stop recording timer: {timer_error}")
+            
+            # Finalize WAV file with comprehensive error handling
+            saved_path = None
             try:
                 if self.wave_writer is not None:
-                    self.wave_writer.finalize()
-                    saved_path = self.wave_writer.path
-                    self.status_label.setText(f"Saved recording to: {saved_path}")
-            except Exception as e:
-                QMessageBox.warning(self, "Save Error", f"Failed to finalize WAV: {e}")
+                    try:
+                        self.wave_writer.finalize()
+                        saved_path = self.wave_writer.path
+                        app_logger.info(f"Recording finalized successfully: {saved_path}")
+                        
+                        # Update status label
+                        try:
+                            if hasattr(self, 'status_label') and self.status_label is not None:
+                                self.status_label.setText(f"Saved recording to: {saved_path}")
+                                app_logger.debug("Status label updated with save path")
+                            else:
+                                app_logger.warning("Status label not available for update")
+                        except Exception as status_error:
+                            app_logger.warning(f"Failed to update status label: {status_error}")
+                        
+                        # Track recording for current part
+                        try:
+                            if not hasattr(self, 'part_recordings'):
+                                self.part_recordings = {}
+                                app_logger.debug("Initialized part_recordings dictionary")
+                            
+                            if not isinstance(self.part_recordings, dict):
+                                app_logger.warning("part_recordings is not a dict, reinitializing")
+                                self.part_recordings = {}
+                            
+                            current_part = getattr(self, 'current_part', 0)
+                            if current_part not in self.part_recordings:
+                                self.part_recordings[current_part] = []
+                            
+                            self.part_recordings[current_part].append(saved_path)
+                            app_logger.info(f"Recording tracked for part {current_part + 1}: {saved_path}")
+                            
+                        except Exception as tracking_error:
+                            app_logger.error(f"Failed to track recording: {tracking_error}", exc_info=True)
+                            # Non-critical, continue
+                        
+                    except Exception as finalize_error:
+                        app_logger.error(f"Failed to finalize WAV file: {finalize_error}", exc_info=True)
+                        QMessageBox.warning(self, "Save Error", f"Failed to finalize recording: {finalize_error}")
+                        # Continue with cleanup
+                else:
+                    app_logger.warning("Wave writer not available for finalization")
+                    
+            except Exception as wav_error:
+                app_logger.error(f"Critical error in WAV finalization: {wav_error}", exc_info=True)
+                QMessageBox.warning(self, "Save Error", f"Critical error saving recording: {wav_error}")
             
-            # Cleanup
-            self.audio_input = None
-            self.wave_writer = None
-            self.dot_visible = False
-            self.recording_label.setText(f"<span style='color:#95a5a6'>●</span> {self.format_seconds(self.record_seconds)}")
-            self.update_recording_ui_state()
+            # Cleanup resources with error handling
+            try:
+                self.audio_input = None
+                self.wave_writer = None
+                self.dot_visible = False
+                app_logger.debug("Audio resources cleaned up")
+            except Exception as cleanup_error:
+                app_logger.error(f"Failed to cleanup audio resources: {cleanup_error}", exc_info=True)
+            
+            # Update recording label with error handling
+            try:
+                if hasattr(self, 'recording_label') and self.recording_label is not None:
+                    try:
+                        if hasattr(self, 'record_seconds'):
+                            formatted_time = self.format_seconds(self.record_seconds)
+                        else:
+                            formatted_time = "00:00:00"
+                        
+                        self.recording_label.setText(f"<span style='color:#95a5a6'>●</span> {formatted_time}")
+                        app_logger.debug("Recording label updated after stop")
+                    except Exception as format_error:
+                        app_logger.warning(f"Failed to format recording time: {format_error}")
+                        self.recording_label.setText("<span style='color:#95a5a6'>●</span> Stopped")
+                else:
+                    app_logger.warning("Recording label not available for update")
+            except Exception as label_error:
+                app_logger.warning(f"Failed to update recording label: {label_error}")
+            
+            # Update UI state with error handling
+            try:
+                self.update_recording_ui_state()
+                app_logger.debug("Recording UI state updated after stop")
+            except Exception as ui_error:
+                app_logger.warning(f"Failed to update recording UI state: {ui_error}")
+            
+            if saved_path:
+                app_logger.info(f"Audio recording stopped and saved successfully: {saved_path}")
+            else:
+                app_logger.warning("Audio recording stopped but save status unknown")
+                
+        except Exception as e:
+            app_logger.error(f"Critical error in stop_recording: {e}", exc_info=True)
+            QMessageBox.critical(self, "Critical Stop Error", 
+                               f"Unexpected error stopping recording: {e}")
+            
+            # Emergency cleanup
+            try:
+                self.audio_input = None
+                self.wave_writer = None
+                if hasattr(self, 'record_timer') and self.record_timer is not None:
+                    self.record_timer.stop()
+                app_logger.debug("Emergency cleanup completed")
+            except Exception as emergency_error:
+                app_logger.error(f"Emergency cleanup failed: {emergency_error}", exc_info=True)
 
     def open_recordings_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.recordings_dir))
@@ -790,25 +1133,136 @@ class SpeakingTestUI(QWidget):
     # Speaking Timer Methods
     def start_speaking_timer(self):
         """Start the speaking test timer for the current part"""
-        if self.current_part == 1:  # Part 2 has preparation phase
-            self.current_phase = "preparation"
-            self.speaking_time_remaining = self.part2_prep_time
-            self.phase_label.setText("Preparation Phase - Take notes")
-        else:
-            self.current_phase = "speaking"
-            self.speaking_time_remaining = self.part_durations[self.current_part]
-            self.phase_label.setText(f"Part {self.current_part + 1} - Speaking")
-        
-        self.speaking_timer_active = True
-        self.speaking_timer.start()
-        self.update_timer_display()
-        self.update_timer_controls()
-        
-        # Update status
-        if self.current_part == 1 and self.current_phase == "preparation":
-            self.status_label.setText("Preparation time started. Take notes for your 2-minute talk.")
-        else:
-            self.status_label.setText(f"Part {self.current_part + 1} timer started. Begin speaking.")
+        try:
+            app_logger.info(f"Starting speaking timer for part {getattr(self, 'current_part', 'unknown')}")
+            
+            # Validate current state
+            try:
+                if not hasattr(self, 'current_part') or self.current_part is None:
+                    self.current_part = 0
+                    app_logger.warning("current_part not set, defaulting to 0")
+                
+                # Validate current_part range
+                if not isinstance(self.current_part, int) or self.current_part < 0 or self.current_part > 2:
+                    app_logger.warning(f"Invalid current_part: {self.current_part}, defaulting to 0")
+                    self.current_part = 0
+                
+                # Validate required attributes
+                if not hasattr(self, 'part2_prep_time'):
+                    self.part2_prep_time = 60  # Default 1 minute
+                    app_logger.warning("part2_prep_time not set, defaulting to 60 seconds")
+                
+                if not hasattr(self, 'part_durations') or not isinstance(self.part_durations, (list, tuple)):
+                    self.part_durations = [180, 120, 300]  # Default durations
+                    app_logger.warning("part_durations not set, using default values")
+                    
+            except Exception as validation_error:
+                app_logger.error(f"Error validating timer state: {validation_error}", exc_info=True)
+                # Set safe defaults
+                self.current_part = 0
+                self.part2_prep_time = 60
+                self.part_durations = [180, 120, 300]
+            
+            # Set phase and time based on current part
+            try:
+                if self.current_part == 1:  # Part 2 has preparation phase
+                    self.current_phase = "preparation"
+                    self.speaking_time_remaining = self.part2_prep_time
+                    phase_text = "Preparation Phase - Take notes"
+                else:
+                    self.current_phase = "speaking"
+                    # Ensure part_durations has enough elements
+                    if len(self.part_durations) > self.current_part:
+                        self.speaking_time_remaining = self.part_durations[self.current_part]
+                    else:
+                        self.speaking_time_remaining = 180  # Default 3 minutes
+                        app_logger.warning(f"part_durations missing index {self.current_part}, using default 180 seconds")
+                    phase_text = f"Part {self.current_part + 1} - Speaking"
+                
+                app_logger.debug(f"Timer phase set to '{self.current_phase}' with {self.speaking_time_remaining} seconds")
+                
+            except Exception as phase_error:
+                app_logger.error(f"Error setting timer phase: {phase_error}", exc_info=True)
+                # Fallback settings
+                self.current_phase = "speaking"
+                self.speaking_time_remaining = 180
+                phase_text = "Speaking"
+            
+            # Update phase label with error handling
+            try:
+                if hasattr(self, 'phase_label') and self.phase_label is not None:
+                    self.phase_label.setText(phase_text)
+                    app_logger.debug("Phase label updated")
+                else:
+                    app_logger.warning("Phase label not available for update")
+            except Exception as label_error:
+                app_logger.warning(f"Failed to update phase label: {label_error}")
+            
+            # Set timer as active
+            try:
+                self.speaking_timer_active = True
+                app_logger.debug("Speaking timer marked as active")
+            except Exception as active_error:
+                app_logger.warning(f"Failed to set timer active state: {active_error}")
+            
+            # Start the timer with error handling
+            try:
+                if not hasattr(self, 'speaking_timer') or self.speaking_timer is None:
+                    app_logger.error("Speaking timer not initialized")
+                    QMessageBox.warning(self, "Timer Error", "Speaking timer is not available")
+                    return
+                
+                self.speaking_timer.start()
+                app_logger.debug("Speaking timer started")
+                
+            except Exception as timer_error:
+                app_logger.error(f"Failed to start speaking timer: {timer_error}", exc_info=True)
+                QMessageBox.warning(self, "Timer Error", f"Failed to start timer: {timer_error}")
+                return
+            
+            # Update display and controls
+            try:
+                self.update_timer_display()
+                app_logger.debug("Timer display updated")
+            except Exception as display_error:
+                app_logger.warning(f"Failed to update timer display: {display_error}")
+            
+            try:
+                self.update_timer_controls()
+                app_logger.debug("Timer controls updated")
+            except Exception as controls_error:
+                app_logger.warning(f"Failed to update timer controls: {controls_error}")
+            
+            # Update status label with error handling
+            try:
+                if hasattr(self, 'status_label') and self.status_label is not None:
+                    if self.current_part == 1 and self.current_phase == "preparation":
+                        status_text = "Preparation time started. Take notes for your 2-minute talk."
+                    else:
+                        status_text = f"Part {self.current_part + 1} timer started. Begin speaking."
+                    
+                    self.status_label.setText(status_text)
+                    app_logger.debug("Status label updated")
+                else:
+                    app_logger.warning("Status label not available for update")
+            except Exception as status_error:
+                app_logger.warning(f"Failed to update status label: {status_error}")
+            
+            app_logger.info(f"Speaking timer started successfully for part {self.current_part + 1}, phase: {self.current_phase}")
+            
+        except Exception as e:
+            app_logger.error(f"Critical error in start_speaking_timer: {e}", exc_info=True)
+            QMessageBox.critical(self, "Critical Timer Error", 
+                               f"Unexpected error starting timer: {e}")
+            
+            # Emergency fallback
+            try:
+                self.speaking_timer_active = False
+                if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                    self.speaking_timer.stop()
+                app_logger.debug("Emergency timer cleanup completed")
+            except Exception as emergency_error:
+                app_logger.error(f"Emergency timer cleanup failed: {emergency_error}", exc_info=True)
 
     def pause_speaking_timer(self):
         """Pause the speaking test timer"""
@@ -845,42 +1299,241 @@ class SpeakingTestUI(QWidget):
 
     def update_speaking_timer(self):
         """Update the speaking timer countdown"""
-        if self.speaking_time_remaining > 0:
-            self.speaking_time_remaining -= 1
-            self.update_timer_display()
-        else:
-            # Time's up for current phase
-            self.handle_timer_completion()
+        try:
+            # Validate timer state
+            try:
+                if not hasattr(self, 'speaking_time_remaining'):
+                    app_logger.warning("speaking_time_remaining not set, initializing to 0")
+                    self.speaking_time_remaining = 0
+                
+                if not isinstance(self.speaking_time_remaining, (int, float)):
+                    app_logger.warning(f"Invalid speaking_time_remaining type: {type(self.speaking_time_remaining)}, converting to int")
+                    try:
+                        self.speaking_time_remaining = int(self.speaking_time_remaining)
+                    except (ValueError, TypeError):
+                        self.speaking_time_remaining = 0
+                        
+            except Exception as validation_error:
+                app_logger.error(f"Error validating timer state: {validation_error}", exc_info=True)
+                self.speaking_time_remaining = 0
+            
+            # Update timer countdown
+            if self.speaking_time_remaining > 0:
+                try:
+                    self.speaking_time_remaining -= 1
+                    app_logger.debug(f"Timer updated: {self.speaking_time_remaining} seconds remaining")
+                except Exception as countdown_error:
+                    app_logger.error(f"Error updating countdown: {countdown_error}", exc_info=True)
+                    self.speaking_time_remaining = 0
+                
+                # Update display
+                try:
+                    self.update_timer_display()
+                except Exception as display_error:
+                    app_logger.warning(f"Failed to update timer display: {display_error}")
+            else:
+                # Time's up for current phase
+                try:
+                    app_logger.info("Timer completed, handling completion")
+                    self.handle_timer_completion()
+                except Exception as completion_error:
+                    app_logger.error(f"Error handling timer completion: {completion_error}", exc_info=True)
+                    # Emergency stop timer
+                    try:
+                        if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                            self.speaking_timer.stop()
+                        self.speaking_timer_active = False
+                        app_logger.debug("Emergency timer stop completed")
+                    except Exception as emergency_error:
+                        app_logger.error(f"Emergency timer stop failed: {emergency_error}", exc_info=True)
+                        
+        except Exception as e:
+            app_logger.error(f"Critical error in update_speaking_timer: {e}", exc_info=True)
+            # Emergency cleanup
+            try:
+                if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                    self.speaking_timer.stop()
+                self.speaking_timer_active = False
+                app_logger.debug("Critical error cleanup completed")
+            except Exception as cleanup_error:
+                app_logger.error(f"Critical error cleanup failed: {cleanup_error}", exc_info=True)
 
     def handle_timer_completion(self):
         """Handle timer completion for different phases"""
-        if self.current_part == 1 and self.current_phase == "preparation":
-            # Transition from preparation to speaking phase
-            self.current_phase = "speaking"
-            self.speaking_time_remaining = self.part2_speaking_time
-            self.phase_label.setText("Part 2 - Speaking (2 minutes)")
-            self.status_label.setText("Preparation time finished. Begin your 2-minute talk now.")
-            self.update_timer_display()
-        else:
-            # Speaking phase completed
-            self.speaking_timer.stop()
-            self.speaking_timer_active = False
-            self.current_phase = "completed"
-            self.phase_label.setText("Time's Up!")
-            self.status_label.setText(f"Part {self.current_part + 1} completed. Time's up!")
-            self.update_timer_controls()
+        try:
+            app_logger.info(f"Handling timer completion for part {getattr(self, 'current_part', 'unknown')}, phase: {getattr(self, 'current_phase', 'unknown')}")
             
-            # Flash the timer display
-            self.countdown_display.setStyleSheet("""
-                color: white;
-                font-size: 18px;
-                font-weight: bold;
-                font-family: Consolas, monospace;
-                background-color: #e74c3c;
-                padding: 5px 10px;
-                border-radius: 5px;
-                border: 2px solid #c0392b;
-            """)
+            # Validate current state
+            try:
+                if not hasattr(self, 'current_part') or self.current_part is None:
+                    self.current_part = 0
+                    app_logger.warning("current_part not set during completion, defaulting to 0")
+                
+                if not hasattr(self, 'current_phase') or not self.current_phase:
+                    self.current_phase = "speaking"
+                    app_logger.warning("current_phase not set during completion, defaulting to speaking")
+                    
+            except Exception as validation_error:
+                app_logger.error(f"Error validating completion state: {validation_error}", exc_info=True)
+                self.current_part = 0
+                self.current_phase = "speaking"
+            
+            # Handle phase transitions
+            if self.current_part == 1 and self.current_phase == "preparation":
+                try:
+                    app_logger.info("Transitioning from preparation to speaking phase for Part 2")
+                    
+                    # Transition from preparation to speaking phase
+                    self.current_phase = "speaking"
+                    
+                    # Set speaking time with validation
+                    try:
+                        if hasattr(self, 'part2_speaking_time') and isinstance(self.part2_speaking_time, (int, float)):
+                            self.speaking_time_remaining = self.part2_speaking_time
+                        else:
+                            self.speaking_time_remaining = 120  # Default 2 minutes
+                            app_logger.warning("part2_speaking_time not available, using default 120 seconds")
+                    except Exception as time_error:
+                        app_logger.warning(f"Error setting speaking time: {time_error}")
+                        self.speaking_time_remaining = 120
+                    
+                    # Update phase label
+                    try:
+                        if hasattr(self, 'phase_label') and self.phase_label is not None:
+                            self.phase_label.setText("Part 2 - Speaking (2 minutes)")
+                            app_logger.debug("Phase label updated for speaking phase")
+                        else:
+                            app_logger.warning("Phase label not available for update")
+                    except Exception as label_error:
+                        app_logger.warning(f"Failed to update phase label: {label_error}")
+                    
+                    # Update status label
+                    try:
+                        if hasattr(self, 'status_label') and self.status_label is not None:
+                            self.status_label.setText("Preparation time finished. Begin your 2-minute talk now.")
+                            app_logger.debug("Status label updated for speaking phase")
+                        else:
+                            app_logger.warning("Status label not available for update")
+                    except Exception as status_error:
+                        app_logger.warning(f"Failed to update status label: {status_error}")
+                    
+                    # Update timer display
+                    try:
+                        self.update_timer_display()
+                        app_logger.debug("Timer display updated for speaking phase")
+                    except Exception as display_error:
+                        app_logger.warning(f"Failed to update timer display: {display_error}")
+                        
+                except Exception as transition_error:
+                    app_logger.error(f"Error during phase transition: {transition_error}", exc_info=True)
+                    # Fallback: stop timer
+                    try:
+                        if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                            self.speaking_timer.stop()
+                        self.speaking_timer_active = False
+                    except Exception as fallback_error:
+                        app_logger.error(f"Fallback timer stop failed: {fallback_error}", exc_info=True)
+            else:
+                try:
+                    app_logger.info(f"Completing speaking phase for part {self.current_part + 1}")
+                    
+                    # Speaking phase completed - stop timer
+                    try:
+                        if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                            self.speaking_timer.stop()
+                            app_logger.debug("Speaking timer stopped")
+                        else:
+                            app_logger.warning("Speaking timer not available for stopping")
+                    except Exception as stop_error:
+                        app_logger.error(f"Failed to stop speaking timer: {stop_error}", exc_info=True)
+                    
+                    # Set timer as inactive
+                    try:
+                        self.speaking_timer_active = False
+                        app_logger.debug("Speaking timer marked as inactive")
+                    except Exception as active_error:
+                        app_logger.warning(f"Failed to set timer inactive: {active_error}")
+                    
+                    # Set phase as completed
+                    try:
+                        self.current_phase = "completed"
+                        app_logger.debug("Phase marked as completed")
+                    except Exception as phase_error:
+                        app_logger.warning(f"Failed to set phase as completed: {phase_error}")
+                    
+                    # Update phase label
+                    try:
+                        if hasattr(self, 'phase_label') and self.phase_label is not None:
+                            self.phase_label.setText("Time's Up!")
+                            app_logger.debug("Phase label updated to 'Time's Up!'")
+                        else:
+                            app_logger.warning("Phase label not available for completion update")
+                    except Exception as label_error:
+                        app_logger.warning(f"Failed to update phase label for completion: {label_error}")
+                    
+                    # Update status label
+                    try:
+                        if hasattr(self, 'status_label') and self.status_label is not None:
+                            self.status_label.setText(f"Part {self.current_part + 1} completed. Time's up!")
+                            app_logger.debug("Status label updated for completion")
+                        else:
+                            app_logger.warning("Status label not available for completion update")
+                    except Exception as status_error:
+                        app_logger.warning(f"Failed to update status label for completion: {status_error}")
+                    
+                    # Update timer controls
+                    try:
+                        self.update_timer_controls()
+                        app_logger.debug("Timer controls updated for completion")
+                    except Exception as controls_error:
+                        app_logger.warning(f"Failed to update timer controls: {controls_error}")
+                    
+                    # Flash the timer display with error handling
+                    try:
+                        if hasattr(self, 'countdown_display') and self.countdown_display is not None:
+                            self.countdown_display.setStyleSheet("""
+                                color: white;
+                                font-size: 18px;
+                                font-weight: bold;
+                                font-family: Consolas, monospace;
+                                background-color: #e74c3c;
+                                padding: 5px 10px;
+                                border-radius: 5px;
+                                border: 2px solid #c0392b;
+                            """)
+                            app_logger.debug("Timer display styled for completion")
+                        else:
+                            app_logger.warning("Countdown display not available for styling")
+                    except Exception as style_error:
+                        app_logger.warning(f"Failed to style countdown display: {style_error}")
+                        
+                except Exception as completion_error:
+                    app_logger.error(f"Error during speaking completion: {completion_error}", exc_info=True)
+                    # Emergency cleanup
+                    try:
+                        if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                            self.speaking_timer.stop()
+                        self.speaking_timer_active = False
+                        app_logger.debug("Emergency completion cleanup done")
+                    except Exception as emergency_error:
+                        app_logger.error(f"Emergency completion cleanup failed: {emergency_error}", exc_info=True)
+            
+            app_logger.info("Timer completion handled successfully")
+            
+        except Exception as e:
+            app_logger.error(f"Critical error in handle_timer_completion: {e}", exc_info=True)
+            QMessageBox.critical(self, "Critical Timer Error", 
+                               f"Unexpected error handling timer completion: {e}")
+            
+            # Emergency cleanup
+            try:
+                if hasattr(self, 'speaking_timer') and self.speaking_timer is not None:
+                    self.speaking_timer.stop()
+                self.speaking_timer_active = False
+                self.current_phase = "completed"
+                app_logger.debug("Critical error cleanup completed")
+            except Exception as cleanup_error:
+                app_logger.error(f"Critical error cleanup failed: {cleanup_error}", exc_info=True)
 
     def update_timer_display(self):
         """Update the visual countdown display"""
@@ -950,3 +1603,89 @@ class SpeakingTestUI(QWidget):
         except Exception as e:
             from logger import app_logger
             app_logger.error("Error refreshing speaking test resources", exc_info=True)
+
+    def finish_test(self):
+        """Finish the speaking test and save results to JSON"""
+        try:
+            reply = QMessageBox.question(self, "Finish Test",
+                                       "Are you sure you want to finish the Speaking test?\n\n"
+                                       "This will save your recordings and end the test.",
+                                       QMessageBox.Yes | QMessageBox.No,
+                                       QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                # Stop any ongoing recording
+                if self.audio_input is not None:
+                    self.stop_recording()
+                
+                # Save answers to JSON
+                self.save_answers_to_json()
+                
+                # Show completion message
+                QMessageBox.information(self, 'Test Completed', 
+                                      'Your Speaking test has been completed and saved!')
+                
+        except Exception as e:
+            app_logger.error(f"Error finishing speaking test: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to finish test: {e}")
+
+    def save_answers_to_json(self):
+        """Save speaking test results including recording paths to JSON file"""
+        try:
+            # Create results directory
+            results_dir = os.path.join(self.base_dir, 'results', 'speaking')
+            os.makedirs(results_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"speaking_test_{self.selected_book}_{self.current_test}_{timestamp}.json"
+            filepath = os.path.join(results_dir, filename)
+            
+            # Prepare test data
+            test_data = {
+                "test_type": "speaking",
+                "book": self.selected_book,
+                "test_number": self.current_test,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "recordings": {},
+                "metadata": {
+                    "total_parts": self.total_parts,
+                    "audio_supported": self.audio_supported,
+                    "recordings_directory": self.recordings_dir
+                }
+            }
+            
+            # Add recordings for each part
+            for part_num in range(self.total_parts):
+                part_key = f"part_{part_num + 1}"
+                if part_num in self.part_recordings:
+                    # Convert absolute paths to relative paths for portability
+                    relative_paths = []
+                    for recording_path in self.part_recordings[part_num]:
+                        try:
+                            # Get relative path from base directory
+                            rel_path = os.path.relpath(recording_path, self.base_dir)
+                            relative_paths.append(rel_path)
+                        except ValueError:
+                            # If relative path fails, use absolute path
+                            relative_paths.append(recording_path)
+                    
+                    test_data["recordings"][part_key] = {
+                        "recording_paths": relative_paths,
+                        "recording_count": len(relative_paths)
+                    }
+                else:
+                    test_data["recordings"][part_key] = {
+                        "recording_paths": [],
+                        "recording_count": 0
+                    }
+            
+            # Save to JSON file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(test_data, f, indent=2, ensure_ascii=False)
+            
+            app_logger.info(f"Speaking test results saved to: {filepath}")
+            
+        except Exception as e:
+            app_logger.error(f"Error saving speaking test results: {e}", exc_info=True)
+            raise

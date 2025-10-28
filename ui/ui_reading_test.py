@@ -435,9 +435,78 @@ class ReadingTestUI(QWidget):
 
     def start_actual_test(self):
         """Start the actual test from protection overlay"""
-        # Reuse the same logic as the top-bar "Start Test" button
-        # so the countdown timer and test state start immediately.
-        self.toggle_test()
+        app_logger.info("Starting actual reading test")
+        
+        try:
+            # Validate essential components
+            if not hasattr(self, 'content_stack') or self.content_stack is None:
+                raise RuntimeError("Content stack not initialized")
+            
+            if not hasattr(self, 'test_content_widget') or self.test_content_widget is None:
+                raise RuntimeError("Test content widget not initialized")
+            
+            try:
+                # Switch to test content
+                self.content_stack.setCurrentWidget(self.test_content_widget)
+                app_logger.debug("Switched to test content successfully")
+            except Exception as e:
+                raise RuntimeError(f"Failed to switch to test content: {e}")
+            
+            # Start the test using toggle_test method
+            try:
+                self.toggle_test()
+                app_logger.debug("Test started successfully via toggle_test")
+            except Exception as e:
+                app_logger.error(f"Failed to start test via toggle_test: {e}", exc_info=True)
+                # Fallback: try to start test manually
+                try:
+                    if not getattr(self, 'test_started', False):
+                        self.test_started = True
+                        self.time_remaining = getattr(self, 'total_time', 60 * 60)
+                        
+                        if hasattr(self, 'timer') and self.timer:
+                            self.timer.start(1000)
+                            app_logger.debug("Timer started manually as fallback")
+                        
+                        if hasattr(self, 'start_test_button') and self.start_test_button:
+                            self.start_test_button.setText("End Test")
+                            app_logger.debug("Start test button updated manually")
+                        
+                        app_logger.info("Test started successfully using fallback method")
+                    else:
+                        app_logger.debug("Test was already started")
+                except Exception as fallback_error:
+                    app_logger.error(f"Fallback test start also failed: {fallback_error}", exc_info=True)
+                    raise RuntimeError(f"Failed to start test: {e}")
+            
+            # Load passage content if available
+            try:
+                if hasattr(self, 'load_passage_content'):
+                    self.load_passage_content()
+                    app_logger.debug("Passage content loaded successfully")
+            except Exception as e:
+                app_logger.warning(f"Failed to load passage content: {e}", exc_info=True)
+                # Non-critical, continue without passage content
+            
+            # Start answer polling if available
+            try:
+                if hasattr(self, 'answer_poll_timer') and self.answer_poll_timer:
+                    self.answer_poll_timer.start()
+                    app_logger.debug("Answer polling started successfully")
+            except Exception as e:
+                app_logger.warning(f"Failed to start answer polling: {e}", exc_info=True)
+                # Non-critical, continue without polling
+            
+            app_logger.info("Reading test started successfully")
+            
+        except RuntimeError as e:
+            app_logger.error(f"Critical error starting reading test: {e}", exc_info=True)
+            QMessageBox.critical(self, "Test Start Error", 
+                               f"Failed to start the reading test:\n{e}\n\nPlease restart the application.")
+        except Exception as e:
+            app_logger.error(f"Unexpected error starting reading test: {e}", exc_info=True)
+            QMessageBox.warning(self, "Test Start Warning", 
+                              f"The reading test started with some issues:\n{e}\n\nYou can continue, but some features may not work properly.")
 
     def switch_passage(self, index):
         """Switch between reading passages"""
@@ -468,51 +537,117 @@ class ReadingTestUI(QWidget):
 
     def finish_test(self):
         """Finish the test"""
-        reply = QMessageBox.question(self, "Finish Test", 
-                                   "Are you sure you want to finish the Reading test?",
-                                   QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            self.timer.stop()
-            # --- Added: stop live tracker polling ---
+        app_logger.info("Attempting to finish reading test")
+        
+        try:
+            # Validate test state
+            if not hasattr(self, 'test_started') or not self.test_started:
+                app_logger.warning("Attempting to finish test but test hasn't started")
+                QMessageBox.information(self, "Test Not Started", 
+                                      "The test hasn't been started yet.")
+                return
+            
+            # Confirm with user
             try:
-                if hasattr(self, 'answer_poll_timer'):
-                    self.answer_poll_timer.stop()
-            except Exception:
-                pass
-            self.test_started = False
-            self.start_test_button.setText("Start Test")
-            self.start_test_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    font-weight: bold;
-                    border: 1px solid #45a049;
-                    padding: 8px 16px;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            # Optional: disable inputs to prevent further edits
-            try:
-                disable_js = r"""
-                (function(){
-                    try {
-                        var nodes = document.querySelectorAll('input, textarea, select');
-                        nodes.forEach(function(n){ n.setAttribute('disabled','true'); });
-                        var editables = document.querySelectorAll('[contenteditable="true"]');
-                        editables.forEach(function(el){ el.setAttribute('contenteditable','false'); });
-                        return true;
-                    } catch(e) { return false; }
-                })();
-                """
-                if hasattr(self, 'web_view') and self.web_view.page():
-                    self.web_view.page().runJavaScript(disable_js)
-            except Exception:
-                pass
-            self.content_stack.setCurrentWidget(self.protection_overlay)
-            # --- Added: collect and save answers, and show summary ---
-            self.show_test_summary()
+                reply = QMessageBox.question(self, "Finish Test", 
+                                           "Are you sure you want to finish the Reading test?",
+                                           QMessageBox.Yes | QMessageBox.No)
+                app_logger.debug(f"User confirmation for test finish: {'Yes' if reply == QMessageBox.Yes else 'No'}")
+            except Exception as e:
+                app_logger.error(f"Failed to show confirmation dialog: {e}", exc_info=True)
+                # Default to Yes if dialog fails
+                reply = QMessageBox.Yes
+            
+            if reply == QMessageBox.Yes:
+                # Stop timer
+                try:
+                    if hasattr(self, 'timer') and self.timer:
+                        self.timer.stop()
+                        app_logger.debug("Main timer stopped successfully")
+                except Exception as e:
+                    app_logger.warning(f"Failed to stop main timer: {e}", exc_info=True)
+                
+                # Stop answer polling timer
+                try:
+                    if hasattr(self, 'answer_poll_timer') and self.answer_poll_timer:
+                        self.answer_poll_timer.stop()
+                        app_logger.debug("Answer poll timer stopped successfully")
+                except Exception as e:
+                    app_logger.warning(f"Failed to stop answer poll timer: {e}", exc_info=True)
+                
+                # Update test state
+                try:
+                    self.test_started = False
+                    app_logger.debug("Test state updated to finished")
+                except Exception as e:
+                    app_logger.warning(f"Failed to update test state: {e}", exc_info=True)
+                
+                # Update start test button
+                try:
+                    if hasattr(self, 'start_test_button') and self.start_test_button:
+                        self.start_test_button.setText("Start Test")
+                        self.start_test_button.setStyleSheet("""
+                            QPushButton {
+                                background-color: #4CAF50;
+                                color: white;
+                                font-weight: bold;
+                                border: 1px solid #45a049;
+                                padding: 8px 16px;
+                            }
+                            QPushButton:hover {
+                                background-color: #45a049;
+                            }
+                        """)
+                        app_logger.debug("Start test button updated successfully")
+                except Exception as e:
+                    app_logger.warning(f"Failed to update start test button: {e}", exc_info=True)
+                
+                # Disable inputs to prevent further edits
+                try:
+                    disable_js = r"""
+                    (function(){
+                        try {
+                            var nodes = document.querySelectorAll('input, textarea, select');
+                            nodes.forEach(function(n){ n.setAttribute('disabled','true'); });
+                            var editables = document.querySelectorAll('[contenteditable="true"]');
+                            editables.forEach(function(el){ el.setAttribute('contenteditable','false'); });
+                            return true;
+                        } catch(e) { return false; }
+                    })();
+                    """
+                    if hasattr(self, 'web_view') and self.web_view and self.web_view.page():
+                        self.web_view.page().runJavaScript(disable_js)
+                        app_logger.debug("Input fields disabled successfully")
+                except Exception as e:
+                    app_logger.warning(f"Failed to disable input fields: {e}", exc_info=True)
+                
+                # Switch to protection overlay
+                try:
+                    if hasattr(self, 'content_stack') and hasattr(self, 'protection_overlay'):
+                        self.content_stack.setCurrentWidget(self.protection_overlay)
+                        app_logger.debug("Switched to protection overlay successfully")
+                except Exception as e:
+                    app_logger.warning(f"Failed to switch to protection overlay: {e}", exc_info=True)
+                
+                # Show test summary
+                try:
+                    self.show_test_summary()
+                    app_logger.info("Reading test finished successfully")
+                except Exception as e:
+                    app_logger.error(f"Failed to show test summary: {e}", exc_info=True)
+                    QMessageBox.warning(self, "Summary Error", 
+                                      f"The test was finished but failed to show summary:\n{e}")
+            else:
+                app_logger.debug("User cancelled test finish")
+                
+        except RuntimeError as e:
+            app_logger.error(f"Critical error finishing reading test: {e}", exc_info=True)
+            QMessageBox.critical(self, "Test Finish Error", 
+                               f"Critical error while finishing the test:\n{e}\n\nPlease restart the application.")
+        except Exception as e:
+            app_logger.error(f"Unexpected error finishing reading test: {e}", exc_info=True)
+            QMessageBox.warning(self, "Test Finish Warning", 
+                              f"The test may not have finished properly:\n{e}\n\nSome cleanup operations may have failed.")
 
     def refresh_resources(self):
         """Refresh the UI when resources change. In fixed-selection mode, keep current book/test."""
@@ -1119,27 +1254,129 @@ class ReadingTestUI(QWidget):
         """Show test completion summary"""
         # Collect answers for display purposes
         self.collect_all_answers()
+        
+        # Save answers to JSON file
+        self.save_answers_to_json()
+        
         QMessageBox.information(self, "Test Complete", 
                               "Your reading test has been completed.")
 
+    def save_answers_to_json(self):
+        """Save test answers to JSON file for grading"""
+        try:
+            # Create results directory if it doesn't exist
+            results_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'results', 'reading')
+            os.makedirs(results_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"reading_test_{self.selected_book}_test{self.selected_test}_{timestamp}.json"
+            filepath = os.path.join(results_dir, filename)
+            
+            # Prepare test data
+            test_data = {
+                "test_type": "reading",
+                "book": self.selected_book,
+                "test_number": self.selected_test,
+                "timestamp": datetime.now().isoformat(),
+                "total_time_seconds": self.total_time,
+                "time_remaining_seconds": self.time_remaining,
+                "answers": getattr(self, 'collected_answers', {}),
+                "metadata": {
+                    "passages_count": 3,
+                    "questions_per_passage": 13,  # Approximate, varies by test
+                    "total_questions": 40,
+                    "passage_ranges": getattr(self, 'passage_ranges', {})
+                }
+            }
+            
+            # Save to JSON file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(test_data, f, indent=2, ensure_ascii=False)
+            
+            app_logger.info(f"Reading test answers saved to: {filepath}")
+            
+        except Exception as e:
+            app_logger.error(f"Error saving reading test answers to JSON: {e}", exc_info=True)
+            QMessageBox.warning(self, "Save Error", 
+                              f"Failed to save test answers: {str(e)}")
+
     def collect_all_answers(self):
         """Collect answers from all three passages using JavaScript"""
-        # Initialize collection state
-        self.collected_answers = {}
-        self.passages_to_collect = [0, 1, 2]
-        self.current_collection_index = 0
-        # Start collecting from first passage
-        self.collect_next_passage()
+        try:
+            app_logger.info("Starting collection of all answers from reading test passages")
+            
+            # Validate test state
+            if not hasattr(self, 'test_started') or not self.test_started:
+                app_logger.warning("Attempting to collect answers but test hasn't started")
+                self.collected_answers = {}
+                return
+            
+            # Initialize collection state with error handling
+            try:
+                self.collected_answers = {}
+                self.passages_to_collect = [0, 1, 2]
+                self.current_collection_index = 0
+                app_logger.debug("Collection state initialized successfully")
+            except Exception as init_error:
+                app_logger.error(f"Failed to initialize collection state: {init_error}", exc_info=True)
+                self.collected_answers = {}
+                return
+            
+            # Validate web view availability
+            if not hasattr(self, 'web_view') or not self.web_view:
+                app_logger.error("Web view not available for answer collection")
+                self.collected_answers = {}
+                return
+            
+            # Start collecting from first passage
+            try:
+                self.collect_next_passage()
+                app_logger.debug("Started collection process from first passage")
+            except Exception as collection_error:
+                app_logger.error(f"Failed to start collection process: {collection_error}", exc_info=True)
+                self.collected_answers = {}
+                
+        except Exception as e:
+            app_logger.error(f"Critical error in collect_all_answers: {e}", exc_info=True)
+            self.collected_answers = {}
 
     def collect_next_passage(self):
         """Collect answers from the next passage in sequence"""
-        if self.current_collection_index >= len(self.passages_to_collect):
-            # All passages collected, show summary
-            self.show_test_summary()
-            return
-        passage_index = self.passages_to_collect[self.current_collection_index]
-        # JavaScript code to collect all answers from the current page
-        js_code = r"""
+        try:
+            app_logger.debug(f"Collecting answers from passage {self.current_collection_index + 1}")
+            
+            # Validate collection state
+            if not hasattr(self, 'passages_to_collect') or not hasattr(self, 'current_collection_index'):
+                app_logger.error("Collection state not properly initialized")
+                return
+            
+            if self.current_collection_index >= len(self.passages_to_collect):
+                # All passages collected, show summary
+                try:
+                    app_logger.info("All passages collected, showing test summary")
+                    self.show_test_summary()
+                except Exception as e:
+                    app_logger.error(f"Failed to show test summary: {e}", exc_info=True)
+                    QMessageBox.warning(self, "Summary Error", 
+                                      f"Failed to show test summary:\n{e}")
+                return
+            
+            # Get passage index with validation
+            try:
+                passage_index = self.passages_to_collect[self.current_collection_index]
+                if not isinstance(passage_index, int) or passage_index < 0 or passage_index > 2:
+                    raise ValueError(f"Invalid passage index: {passage_index}")
+                app_logger.debug(f"Processing passage index: {passage_index}")
+            except (IndexError, ValueError) as e:
+                app_logger.error(f"Invalid passage index at collection index {self.current_collection_index}: {e}", exc_info=True)
+                # Skip to next passage
+                self.current_collection_index += 1
+                QTimer.singleShot(100, self.collect_next_passage)
+                return
+            
+            # JavaScript code to collect all answers from the current page
+            js_code = r"""
         (function() {
             try {
                 var inputs = document.querySelectorAll('input, textarea, select, [contenteditable="true"], [data-question]');
@@ -1195,49 +1432,201 @@ class ReadingTestUI(QWidget):
                 return { answers: {}, success: false, error: error.message };
             }
         })();
-        """
-        # Switch to the passage
-        self.switch_passage(passage_index)
-        # Wait for page to load, then collect answers
-        QTimer.singleShot(800, lambda: self.execute_collection_js(passage_index, js_code))
+            """
+            
+            # Switch to the passage with error handling
+            try:
+                self.switch_passage(passage_index)
+                app_logger.debug(f"Switched to passage {passage_index} successfully")
+            except Exception as e:
+                app_logger.error(f"Failed to switch to passage {passage_index}: {e}", exc_info=True)
+                # Store empty answers for this passage and continue
+                self.store_passage_answers(passage_index, {})
+                return
+            
+            # Wait for page to load, then collect answers with error handling
+            try:
+                QTimer.singleShot(800, lambda: self.execute_collection_js(passage_index, js_code))
+                app_logger.debug(f"Scheduled JavaScript execution for passage {passage_index}")
+            except Exception as e:
+                app_logger.error(f"Failed to schedule JavaScript execution for passage {passage_index}: {e}", exc_info=True)
+                # Store empty answers for this passage and continue
+                self.store_passage_answers(passage_index, {})
+                
+        except Exception as e:
+            app_logger.error(f"Critical error in collect_next_passage: {e}", exc_info=True)
+            # Try to recover by moving to next passage or finishing
+            try:
+                self.current_collection_index += 1
+                if self.current_collection_index < len(self.passages_to_collect):
+                    QTimer.singleShot(100, self.collect_next_passage)
+                else:
+                    self.show_test_summary()
+            except Exception as recovery_error:
+                app_logger.error(f"Failed to recover from collection error: {recovery_error}", exc_info=True)
+                QMessageBox.critical(self, "Collection Error", 
+                                   f"Critical error during answer collection:\n{e}\n\nCollection process stopped.")
 
     def execute_collection_js(self, passage_index, js_code):
         """Execute JavaScript to collect answers for a passage"""
-        def handle_collection_result(result):
-            try:
-                if result and isinstance(result, dict) and result.get('success', False):
-                    var_answers = result.get('answers', {})
-                    # Filter answers to this passage range
-                    start, end = self.passage_ranges[passage_index]
-                    answers = {}
-                    for k, v in var_answers.items():
-                        try:
-                            n = int(k)
-                        except Exception:
-                            continue
-                        if n >= start and n <= end:
-                            answers[n] = v
-                    self.store_passage_answers(passage_index, answers)
-                else:
-                    error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                    app_logger.warning(f"Failed to collect answers for passage {passage_index + 1}: {error_msg}")
-                    self.store_passage_answers(passage_index, {})
-            except Exception as e:
-                app_logger.error(f"Error processing collection result for passage {passage_index + 1}", exc_info=True)
-                self.store_passage_answers(passage_index, {})
         try:
-            self.web_view.page().runJavaScript(js_code, handle_collection_result)
+            app_logger.debug(f"Executing JavaScript to collect answers for passage {passage_index + 1}")
+            
+            # Validate parameters
+            if not isinstance(passage_index, int) or passage_index < 0 or passage_index > 2:
+                app_logger.error(f"Invalid passage_index: {passage_index}")
+                self.store_passage_answers(passage_index, {})
+                return
+            
+            if not js_code or not isinstance(js_code, str):
+                app_logger.error(f"Invalid js_code for passage {passage_index + 1}")
+                self.store_passage_answers(passage_index, {})
+                return
+            
+            def handle_collection_result(result):
+                try:
+                    app_logger.debug(f"Processing collection result for passage {passage_index + 1}")
+                    
+                    if result and isinstance(result, dict) and result.get('success', False):
+                        var_answers = result.get('answers', {})
+                        app_logger.info(f"Successfully collected {len(var_answers)} raw answers for passage {passage_index + 1}")
+                        
+                        # Validate passage ranges
+                        try:
+                            if not hasattr(self, 'passage_ranges') or passage_index >= len(self.passage_ranges):
+                                app_logger.error(f"Invalid passage ranges for passage {passage_index + 1}")
+                                self.store_passage_answers(passage_index, {})
+                                return
+                            
+                            start, end = self.passage_ranges[passage_index]
+                            answers = {}
+                            
+                            for k, v in var_answers.items():
+                                try:
+                                    n = int(k)
+                                    if n >= start and n <= end:
+                                        answers[n] = v
+                                except (ValueError, TypeError) as e:
+                                    app_logger.debug(f"Skipping invalid question number '{k}': {e}")
+                                    continue
+                            
+                            app_logger.debug(f"Filtered {len(answers)} answers for passage {passage_index + 1} (range {start}-{end})")
+                            self.store_passage_answers(passage_index, answers)
+                            
+                        except Exception as filter_error:
+                            app_logger.error(f"Error filtering answers for passage {passage_index + 1}: {filter_error}", exc_info=True)
+                            self.store_passage_answers(passage_index, {})
+                    else:
+                        error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                        app_logger.warning(f"Failed to collect answers for passage {passage_index + 1}: {error_msg}")
+                        self.store_passage_answers(passage_index, {})
+                        
+                except Exception as e:
+                    app_logger.error(f"Error processing collection result for passage {passage_index + 1}: {e}", exc_info=True)
+                    self.store_passage_answers(passage_index, {})
+            
+            # Validate web view and page availability
+            if not hasattr(self, 'web_view') or not self.web_view:
+                app_logger.error(f"Web view not available for passage {passage_index + 1}")
+                self.store_passage_answers(passage_index, {})
+                return
+            
+            web_page = self.web_view.page()
+            if not web_page:
+                app_logger.error(f"Web page not available for passage {passage_index + 1}")
+                self.store_passage_answers(passage_index, {})
+                return
+            
+            # Execute JavaScript with error handling
+            try:
+                web_page.runJavaScript(js_code, handle_collection_result)
+                app_logger.debug(f"JavaScript execution initiated for passage {passage_index + 1}")
+            except Exception as js_error:
+                app_logger.error(f"JavaScript execution failed for passage {passage_index + 1}: {js_error}", exc_info=True)
+                self.store_passage_answers(passage_index, {})
+                
         except Exception as e:
-            app_logger.error(f"JavaScript execution error on passage {passage_index + 1}", exc_info=True)
+            app_logger.error(f"Critical error in execute_collection_js for passage {passage_index + 1}: {e}", exc_info=True)
             self.store_passage_answers(passage_index, {})
 
     def store_passage_answers(self, passage_index, answers):
         """Store answers for a specific passage"""
-        self.collected_answers[f"Passage {passage_index + 1}"] = answers or {}
-        # Move to next passage
-        self.current_collection_index += 1
-        if self.current_collection_index < len(self.passages_to_collect):
-            QTimer.singleShot(200, self.collect_next_passage)
-        else:
-            # All passages collected, show summary
-            self.show_test_summary()
+        try:
+            app_logger.debug(f"Storing answers for passage {passage_index + 1}")
+            
+            # Validate parameters
+            if not isinstance(passage_index, int) or passage_index < 0 or passage_index > 2:
+                app_logger.error(f"Invalid passage_index for storage: {passage_index}")
+                return
+            
+            if not isinstance(answers, dict):
+                app_logger.warning(f"Invalid answers type for passage {passage_index + 1}, using empty dict")
+                answers = {}
+            
+            # Validate and initialize collected_answers
+            try:
+                if not hasattr(self, 'collected_answers') or not isinstance(self.collected_answers, dict):
+                    app_logger.warning("collected_answers not properly initialized, creating new dict")
+                    self.collected_answers = {}
+                
+                passage_key = f"Passage {passage_index + 1}"
+                self.collected_answers[passage_key] = answers or {}
+                app_logger.info(f"Stored {len(answers)} answers for {passage_key}")
+                
+            except Exception as storage_error:
+                app_logger.error(f"Failed to store answers for passage {passage_index + 1}: {storage_error}", exc_info=True)
+                return
+            
+            # Advance collection index with error handling
+            try:
+                if not hasattr(self, 'current_collection_index'):
+                    app_logger.error("current_collection_index not initialized")
+                    return
+                
+                self.current_collection_index += 1
+                app_logger.debug(f"Advanced collection index to {self.current_collection_index}")
+                
+            except Exception as index_error:
+                app_logger.error(f"Failed to advance collection index: {index_error}", exc_info=True)
+                return
+            
+            # Continue collection process with error handling
+            try:
+                if not hasattr(self, 'passages_to_collect'):
+                    app_logger.error("passages_to_collect not initialized")
+                    return
+                
+                if self.current_collection_index < len(self.passages_to_collect):
+                    # Schedule next passage collection
+                    try:
+                        QTimer.singleShot(200, self.collect_next_passage)
+                        app_logger.debug(f"Scheduled collection for next passage (index {self.current_collection_index})")
+                    except Exception as schedule_error:
+                        app_logger.error(f"Failed to schedule next passage collection: {schedule_error}", exc_info=True)
+                        # Fallback: try immediate collection
+                        try:
+                            self.collect_next_passage()
+                        except Exception as immediate_error:
+                            app_logger.error(f"Immediate collection fallback also failed: {immediate_error}", exc_info=True)
+                else:
+                    # All passages collected, show summary
+                    try:
+                        app_logger.info("All passages collected, showing test summary")
+                        self.show_test_summary()
+                    except Exception as summary_error:
+                        app_logger.error(f"Failed to show test summary: {summary_error}", exc_info=True)
+                        QMessageBox.warning(self, "Summary Error", 
+                                          f"All answers were collected but failed to show summary:\n{summary_error}")
+                        
+            except Exception as continuation_error:
+                app_logger.error(f"Failed to continue collection process: {continuation_error}", exc_info=True)
+                # Try to force finish the collection
+                try:
+                    self.show_test_summary()
+                except Exception as force_finish_error:
+                    app_logger.error(f"Failed to force finish collection: {force_finish_error}", exc_info=True)
+                    QMessageBox.critical(self, "Collection Error", 
+                                       f"Critical error in answer collection process:\n{continuation_error}\n\nCollection stopped.")
+                    
+        except Exception as e:
+            app_logger.error(f"Critical error in store_passage_answers for passage {passage_index + 1}: {e}", exc_info=True)
