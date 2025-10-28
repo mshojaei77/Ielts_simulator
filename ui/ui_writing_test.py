@@ -40,6 +40,12 @@ class WritingTestUI(QWidget):
         self.test_started = False
         self.completed_tasks = set()  # Track completed tasks
         
+        # Separate storage for Task 1 and Task 2 answers
+        self.task_answers = {
+            0: "",  # Task 1 answer
+            1: ""   # Task 2 answer
+        }
+        
         # Set application-wide style to match IELTS CBT
         self.apply_ielts_style()
         self.initUI()
@@ -247,7 +253,7 @@ class WritingTestUI(QWidget):
         left_layout.setSpacing(10)
 
         # Cambridge book selection
-        book_label = QLabel("Cambridge IELTS Academic Writing Test")
+        book_label = QLabel("IELTS Academic Writing Test")
         book_label.setStyleSheet("font-weight: bold; font-size: 13px; background-color: #f0f0f0;")
         
         # Fixed selection display (no in-app switching)
@@ -378,33 +384,44 @@ class WritingTestUI(QWidget):
         
         # Answer text area
         answer_label = QLabel("Your answer:")
-        answer_label.setStyleSheet("font-weight: bold; font-size: 13px; background-color: white;")
+        answer_label.setStyleSheet("""
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-weight: bold; 
+            font-size: 16px; 
+            color: #2c3e50;
+            background-color: white;
+            margin-bottom: 5px;
+        """)
         
         self.answer_text = QTextEdit()
         self.answer_text.setStyleSheet("""
             QTextEdit {
                 background-color: white;
                 border: 1px solid #c0c0c0;
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-                line-height: 1.5;
-                padding: 10px;
+                font-family: 'Segoe UI', 'Arial', sans-serif;
+                font-size: 18px;
+                line-height: 1.6;
+                padding: 12px;
+                color: #333333;
             }
             QTextEdit:focus {
                 border: 2px solid #4CAF50;
+                outline: none;
             }
         """)
         self.answer_text.textChanged.connect(self.update_word_count)
+        self.answer_text.textChanged.connect(self.save_current_answer)
         
         # Word count display
         self.word_count_label = QLabel("Words: 0")
         self.word_count_label.setStyleSheet("""
-            font-size: 12px;
-            color: #666;
-            padding: 5px;
-            background-color: #f8f8f8;
-            border: 1px solid #e0e0e0;
-            border-radius: 3px;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            padding: 8px 12px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
         """)
         
         answer_layout.addWidget(answer_label)
@@ -578,6 +595,12 @@ class WritingTestUI(QWidget):
 
     def switch_task(self, task_index):
         """Switch between Task 1 and Task 2"""
+        # Save current answer before switching (if not the first time)
+        if hasattr(self, 'answer_text') and hasattr(self, 'current_task'):
+            current_text = self.answer_text.toPlainText()
+            self.task_answers[self.current_task] = current_text
+        
+        # Update current task
         self.current_task = task_index
         self.current_passage = task_index
         
@@ -593,7 +616,19 @@ class WritingTestUI(QWidget):
         
         # Load content
         self.update_task_content()
+        
+        # Load the saved answer for this task (if answer_text exists)
+        if hasattr(self, 'answer_text'):
+            saved_answer = self.task_answers.get(task_index, "")
+            self.answer_text.setPlainText(saved_answer)
+        
         self.update_word_count()
+
+    def save_current_answer(self):
+        """Save the current answer to the task_answers dictionary"""
+        if hasattr(self, 'answer_text') and hasattr(self, 'current_task'):
+            current_text = self.answer_text.toPlainText()
+            self.task_answers[self.current_task] = current_text
 
     def on_test_selection_changed(self):
         """Deprecated in fixed selection mode: no in-app test switching"""
@@ -642,20 +677,25 @@ class WritingTestUI(QWidget):
         # Update display with color coding
         if word_count < min_words:
             color = "#e74c3c"  # Red
+            bg_color = "#fdf2f2"  # Light red background
+            border_color = "#f5c6cb"  # Light red border
             status = f"Words: {word_count} (need {min_words - word_count} more)"
         else:
             color = "#27ae60"  # Green
+            bg_color = "#f0f9f0"  # Light green background
+            border_color = "#c3e6cb"  # Light green border
             status = f"Words: {word_count} ✓"
         
         self.word_count_label.setText(status)
         self.word_count_label.setStyleSheet(f"""
-            font-size: 12px;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-size: 15px;
             color: {color};
             font-weight: bold;
-            padding: 5px;
-            background-color: #f8f8f8;
-            border: 1px solid #e0e0e0;
-            border-radius: 3px;
+            padding: 8px 12px;
+            background-color: {bg_color};
+            border: 1px solid {border_color};
+            border-radius: 4px;
         """)
         
         # Update completion status
@@ -663,15 +703,23 @@ class WritingTestUI(QWidget):
 
     def update_completion_counter(self):
         """Update the completion counter in real-time"""
-        # Check if current task meets minimum word requirement
-        text = self.answer_text.toPlainText()
-        word_count = len(text.split()) if text.strip() else 0
-        min_words = 150 if self.current_task == 0 else 250
+        # Ensure current answer is saved
+        self.save_current_answer()
         
-        if word_count >= min_words:
-            self.completed_tasks.add(self.current_task)
-        else:
-            self.completed_tasks.discard(self.current_task)
+        # Check completion status for both tasks
+        self.completed_tasks.clear()
+        
+        # Check Task 1 (150 words minimum)
+        task1_text = self.task_answers.get(0, "")
+        task1_word_count = len(task1_text.split()) if task1_text.strip() else 0
+        if task1_word_count >= 150:
+            self.completed_tasks.add(0)
+        
+        # Check Task 2 (250 words minimum)
+        task2_text = self.task_answers.get(1, "")
+        task2_word_count = len(task2_text.split()) if task2_text.strip() else 0
+        if task2_word_count >= 250:
+            self.completed_tasks.add(1)
         
         completed_count = len(self.completed_tasks)
         self.completion_label.setText(f"Completed: {completed_count}/2")
@@ -704,7 +752,7 @@ class WritingTestUI(QWidget):
             self.end_test()
 
     def end_test(self):
-        """End the test and save answers"""
+        """End the test"""
         reply = QMessageBox.question(self, 'End Test', 
                                    'Are you sure you want to end the test?',
                                    QMessageBox.Yes | QMessageBox.No, 
@@ -715,82 +763,12 @@ class WritingTestUI(QWidget):
             self.test_started = False
             self.start_test_button.setText("Start Test")
             
-            # Save answers before showing completion message
-            self.save_answers_to_file()
+            # Save current answer to preserve work
+            self.save_current_answer()
             
-            QMessageBox.information(self, 'Test Completed', 'Your test has been completed and answers saved!')
+            QMessageBox.information(self, 'Test Completed', 'Your test has been completed!')
 
-    def save_answers_to_file(self):
-        """Save writing test answers to file"""
-        try:
-            # Create results directory structure
-            results_dir = os.path.join(os.path.dirname(__file__), '..', 'results', 'writing')
-            os.makedirs(results_dir, exist_ok=True)
-            
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            book_name = self.selected_book.replace(" ", "_") if self.selected_book else "Unknown_Book"
-            test_num = self.selected_test if self.selected_test is not None else "Unknown"
-            filename = f"Writing_Test_{book_name}_Test{test_num}_{timestamp}.txt"
-            file_path = os.path.join(results_dir, filename)
-            
-            # Collect answers from both tasks
-            task1_answer = ""
-            task2_answer = ""
-            
-            # Get current answer
-            current_answer = self.answer_text.toPlainText()
-            if self.current_task == 0:
-                task1_answer = current_answer
-            else:
-                task2_answer = current_answer
-            
-            # Note: In a complete implementation, we would need to store answers
-            # for both tasks as the user switches between them. For now, we save
-            # the current task's answer.
-            
-            # Prepare content
-            content = f"""IELTS Academic Writing Test Results
-Book: {self.selected_book or 'Unknown'}
-Test: {self.selected_test if self.selected_test is not None else 'Unknown'}
-Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Total Time Allocated: 60 minutes
-Time Remaining: {self.time_remaining // 60:02d}:{self.time_remaining % 60:02d}
 
-{'='*50}
-
-TASK 1 (20 minutes, minimum 150 words):
-Word Count: {len(task1_answer.split()) if task1_answer.strip() else 0}
-
-{task1_answer if task1_answer else '[No answer provided]'}
-
-{'='*50}
-
-TASK 2 (40 minutes, minimum 250 words):
-Word Count: {len(task2_answer.split()) if task2_answer.strip() else 0}
-
-{task2_answer if task2_answer else '[No answer provided]'}
-
-{'='*50}
-
-Current Task: Task {self.current_task + 1}
-Completed Tasks: {len(self.completed_tasks)}/2
-"""
-            
-            # Write to file
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            app_logger.info(f"Writing test answers saved to: {file_path}")
-            
-            # Show success message
-            QMessageBox.information(self, 'Answers Saved', 
-                                  f'Your answers have been saved to:\n{filename}')
-            
-        except Exception as e:
-            app_logger.error("Error saving writing test answers", exc_info=True)
-            QMessageBox.warning(self, 'Save Error', 
-                              'There was an error saving your answers. Please check the logs.')
 
     def start_actual_test(self):
         """Start the actual test from protection overlay"""

@@ -156,7 +156,7 @@ class ReadingTestUI(QWidget):
         top_bar_layout.setSpacing(15)
 
         # Left section - Test info
-        test_info_label = QLabel("Cambridge IELTS Academic Reading Test")
+        test_info_label = QLabel("IELTS Academic Reading Test")
         test_info_label.setStyleSheet("font-size: 14px; font-weight: bold; background-color: #f0f0f0;")
         
         # Selected book/test info (static; combos removed)
@@ -1094,7 +1094,7 @@ class ReadingTestUI(QWidget):
             self.timer_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red; background-color: #f0f0f0; padding: 0 10px;")
             
             # Alert user
-            QMessageBox.critical(self, "Time's Up", "Your Reading test time has ended. Your responses have been saved.")
+            QMessageBox.critical(self, "Time's Up", "Your Reading test time has ended.")
             
             # Reset test state
             self.test_started = False
@@ -1116,12 +1116,11 @@ class ReadingTestUI(QWidget):
             self.show_test_summary()
 
     def show_test_summary(self):
-        """Show test completion summary and save answers"""
-        # Collect and save answers
+        """Show test completion summary"""
+        # Collect answers for display purposes
         self.collect_all_answers()
         QMessageBox.information(self, "Test Complete", 
-                              "Your reading test has been completed.\n\n"
-                              "Your answers are being saved to results folder.")
+                              "Your reading test has been completed.")
 
     def collect_all_answers(self):
         """Collect answers from all three passages using JavaScript"""
@@ -1135,8 +1134,8 @@ class ReadingTestUI(QWidget):
     def collect_next_passage(self):
         """Collect answers from the next passage in sequence"""
         if self.current_collection_index >= len(self.passages_to_collect):
-            # All passages collected, save answers
-            self.save_answers_to_file()
+            # All passages collected, show summary
+            self.show_test_summary()
             return
         passage_index = self.passages_to_collect[self.current_collection_index]
         # JavaScript code to collect all answers from the current page
@@ -1240,49 +1239,5 @@ class ReadingTestUI(QWidget):
         if self.current_collection_index < len(self.passages_to_collect):
             QTimer.singleShot(200, self.collect_next_passage)
         else:
-            # All passages collected, save
-            self.save_answers_to_file()
-
-    def save_answers_to_file(self):
-        """Save all collected answers to a text file"""
-        try:
-            results_dir = os.path.join(os.path.dirname(__file__), '..', 'results', 'reading')
-            if not os.path.exists(results_dir):
-                os.makedirs(results_dir)
-            current_time = datetime.now()
-            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-            current_test = f"Test {self.selected_test}" if getattr(self, 'selected_test', None) is not None else "Unknown_Test"
-            current_book = getattr(self, 'selected_book', None) or "Unknown_Book"
-            filename = f"Reading_Answers_{current_book.replace(' ', '_')}_{current_test.replace(' ', '_')}_{timestamp}.txt"
-            file_path = os.path.join(results_dir, filename)
-            content = []
-            content.append("=" * 60)
-            content.append("IELTS READING TEST ANSWERS")
-            content.append("=" * 60)
-            content.append(f"Test: {current_book} - {current_test}")
-            content.append(f"Date: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            content.append(f"Duration: {60 - (self.time_remaining // 60)} minutes")
-            content.append("=" * 60)
-            content.append("")
-            # Add answers per passage
-            for passage_name in ["Passage 1", "Passage 2", "Passage 3"]:
-                content.append(f"{passage_name}:")
-                content.append("-" * 20)
-                answers = getattr(self, 'collected_answers', {}).get(passage_name, {})
-                if answers:
-                    for question in sorted(answers.keys()):
-                        ans_val = answers[question]
-                        content.append(f"Question {question}: {ans_val if ans_val else '[No Answer]'}")
-                else:
-                    content.append("No answers recorded for this passage")
-                content.append("")
-            content.append("=" * 60)
-            content.append("End of Answers")
-            content.append("=" * 60)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(content))
-            QMessageBox.information(self, "Answers Saved", 
-                                  f"Your answers have been saved successfully!\n\nFile location: {file_path}")
-        except Exception as e:
-            app_logger.error("Failed to save reading answers to file", exc_info=True)
-            QMessageBox.warning(self, "Save Error", f"Failed to save answers: {str(e)}")
+            # All passages collected, show summary
+            self.show_test_summary()

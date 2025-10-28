@@ -100,5 +100,26 @@
     </table>
 </div>
 
+<div style="margin-top: 30px; padding: 20px; border: 2px solid #ddd; border-radius: 5px;">
+    <h3>Your Response</h3>
+    <p><strong>Write at least 150 words.</strong></p>
+    <textarea id="task1_response" name="task1_response" class="answer-blank writing-response" data-question="task1" 
+              style="width: 100%; height: 300px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: Arial, sans-serif; font-size: 14px; resize: vertical;" 
+              placeholder="Write your response here..."></textarea>
+    
+    <div style="margin-top: 10px; font-size: 12px; color: #666;">
+        <span id="word_count_task1">Word count: 0</span>
+    </div>
+</div>
+
+<script>
+// Word count functionality
+document.getElementById('task1_response').addEventListener('input', function() {
+    const text = this.value.trim();
+    const wordCount = text === '' ? 0 : text.split(/\s+/).length;
+    document.getElementById('word_count_task1').textContent = 'Word count: ' + wordCount;
+});
+</script>
+
 </body>
 </html>

@@ -21,7 +21,7 @@ def _get_log_level_from_env() -> int:
     Returns:
         Logging level constant (e.g., logging.DEBUG, logging.INFO, etc.)
     """
-    log_level_str = os.getenv('LOG_LEVEL', 'WARNING').upper().strip()
+    log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper().strip()
     
     # Map string values to logging constants
     level_mapping = {

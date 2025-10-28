@@ -7,3 +7,4 @@ wheels/
 
 # Virtual environments
 .venv
+/etc

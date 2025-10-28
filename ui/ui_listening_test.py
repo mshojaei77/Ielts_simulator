@@ -208,7 +208,7 @@ class ListeningTestUI(QWidget):
         top_bar_layout.setContentsMargins(15, 8, 15, 8)
         
         # Title
-        title_label = QLabel("Cambridge IELTS Academic Listening Test")
+        title_label = QLabel("IELTS Academic Listening Test")
         title_label.setObjectName("top_bar_label")
         
         # Cambridge book (fixed)
@@ -779,7 +779,7 @@ class ListeningTestUI(QWidget):
                     # Last section: turn Next into Finish Test
                     self.next_button.setEnabled(True)
                     self.next_button.setText("Finish Test")
-                    self.next_button.setToolTip("Finish test and save your answers")
+                    self.next_button.setToolTip("Finish test")
                     self.next_button.clicked.connect(self.finish_test)
             else:
                 app_logger.warning("next_button not found or is None")
@@ -801,7 +801,7 @@ class ListeningTestUI(QWidget):
         try:
             if not getattr(self, 'test_started', False):
                 QMessageBox.information(self, "Test Not Started", 
-                                        "Please start the test to finish and save your answers.")
+                                        "Please start the test to finish.")
                 return
             # Stop any playing audio
             try:
@@ -809,7 +809,7 @@ class ListeningTestUI(QWidget):
                     self.media_player.stop()
             except Exception:
                 pass
-            # Reuse existing end-test flow (confirmation + summary + save)
+            # Reuse existing end-test flow (confirmation + summary)
             self.toggle_test()
         except Exception as e:
             app_logger.error(f"Error finishing test: {e}", exc_info=True)
@@ -942,7 +942,7 @@ class ListeningTestUI(QWidget):
             # Stop test
             reply = QMessageBox.question(self, 'End Test', 
                                        'Are you sure you want to end the test?\n\n'
-                                       'Your progress will be saved and you can review your answers.',
+                                       'Your progress will be reviewed.',
                                        QMessageBox.Yes | QMessageBox.No, 
                                        QMessageBox.No)
             
@@ -1160,8 +1160,8 @@ class ListeningTestUI(QWidget):
     def collect_next_section(self):
         """Collect answers from the next section in sequence"""
         if self.current_collection_index >= len(self.sections_to_collect):
-            # All sections collected, save answers
-            self.save_answers_to_file()
+            # All sections collected, show summary
+            self.show_test_summary()
             return
         
         section_index = self.sections_to_collect[self.current_collection_index]
@@ -1206,10 +1206,19 @@ class ListeningTestUI(QWidget):
             except Exception as e:
                 app_logger.error(f"Error processing collection result for section {section_index + 1}", exc_info=True)
                 self.store_section_answers(section_index, {})
+        
+        # Execute the JavaScript code with the result handler
+        if hasattr(self, 'web_view') and self.web_view.page():
+            self.web_view.page().runJavaScript(js_code, handle_collection_result)
+        else:
+            app_logger.error(f"Web view not available for section {section_index + 1}")
+            self.store_section_answers(section_index, {})
     
     def store_section_answers(self, section_index, answers):
         """Store answers for a specific section"""
-        self.collected_answers[f"Section {section_index + 1}"] = answers
+        section_name = f"Section {section_index + 1}"
+        self.collected_answers[section_name] = answers
+        app_logger.info(f"Stored answers for {section_name}: {answers}")
         
         # Move to next section
         self.current_collection_index += 1
@@ -1217,83 +1226,21 @@ class ListeningTestUI(QWidget):
         # Continue with next section or finish if all done
         if self.current_collection_index < len(self.sections_to_collect):
             # Collect next section after a short delay
+            app_logger.info(f"Moving to collect section {self.current_collection_index + 1}")
             QTimer.singleShot(200, self.collect_next_section)
         else:
-            # All sections collected, save the answers
-            self.save_answers_to_file()
+            # All sections collected, show completion message
+            app_logger.info("All sections collected, test completed")
+            self.show_test_summary()
     
-    def save_answers_to_file(self):
-        """Save all collected answers to a text file """
-        try:
-            ielts_practice_path = os.path.join(os.path.dirname(__file__), '..', 'results', 'listening')
-            
-            # Create directory if it doesn't exist
-            if not os.path.exists(ielts_practice_path):
-                os.makedirs(ielts_practice_path)
-            
-            # Generate filename with timestamp
-            current_time = datetime.now()
-            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-            current_test = f"Test {self.selected_test}" if getattr(self, 'selected_test', None) is not None else "Unknown_Test"
-            current_book = getattr(self, 'selected_book', None) or "Unknown_Book"
-            
-            filename = f"Listening_Answers_{current_book.replace(' ', '_')}_{current_test.replace(' ', '_')}_{timestamp}.txt"
-            file_path = os.path.join(ielts_practice_path, filename)
-            
-            # Prepare content
-            content = []
-            content.append("=" * 60)
-            content.append("IELTS LISTENING TEST ANSWERS")
-            content.append("=" * 60)
-            content.append(f"Test: {current_book} - {current_test}")
-            content.append(f"Date: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            content.append(f"Duration: {35 - (self.time_remaining // 60)} minutes")
-            content.append("=" * 60)
-            content.append("")
-            
-            # Add answers for each section
-            for section_name in ["Section 1", "Section 2", "Section 3", "Section 4"]:
-                content.append(f"{section_name}:")
-                content.append("-" * 20)
-                
-                if section_name in getattr(self, 'collected_answers', {}):
-                    answers = self.collected_answers[section_name]
-                    if answers:
-                        for question, answer in answers.items():
-                            content.append(f"Question {question}: {answer if answer else '[No Answer]'}")
-                    else:
-                        content.append("No answers recorded for this section")
-                else:
-                    content.append("Section not completed")
-                
-                content.append("")
-            
-            content.append("=" * 60)
-            content.append("End of Answers")
-            content.append("=" * 60)
-            
-            # Write to file
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(content))
-            
-            # Show success message
-            QMessageBox.information(self, "Answers Saved", 
-                                  f"Your answers have been saved successfully!\n\n"
-                                  f"File location: {file_path}")
-            
-        except Exception as e:
-            app_logger.error("Failed to save listening answers to file", exc_info=True)
-            QMessageBox.warning(self, "Save Error", 
-                              f"Failed to save answers: {str(e)}")
-    
+
     def show_test_summary(self):
-        """Show test completion summary and save answers"""
-        # Collect and save answers
+        """Show test completion summary"""
+        # Collect answers for display purposes only
         self.collect_all_answers()
         
         QMessageBox.information(self, "Test Complete", 
-                              "Your listening test has been completed.\n\n"
-                              "Your answers are being saved to results folder.")
+                              "Your listening test has been completed.")
 
 
 
